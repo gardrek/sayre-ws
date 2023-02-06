@@ -1,0 +1,9 @@
+[workspace]
+
+members = [
+    "vfc",
+    "sayre",
+]
+
+
+
