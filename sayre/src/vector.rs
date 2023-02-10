@@ -17,14 +17,6 @@ pub struct Vector<const N: usize, T>(pub [T; N]) where T: BasicMath;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vector<const N: usize>(pub [f64; N]);
 
-pub fn new_2d(x: f64, y: f64) -> Vector<2> {
-    Vector::<2>([x, y])
-}
-
-pub fn new_3d(x: f64, y: f64, z: f64) -> Vector<3> {
-    Vector::<3>([x, y, z])
-}
-
 impl Vector<2> {
     pub fn x(&self) -> f64 {
         self.0[0]
