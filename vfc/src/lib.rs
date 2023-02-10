@@ -137,7 +137,11 @@ impl Vfc {
         (x + Wrapping(PIXEL_WIDTH as u8) * y).0.into()
     }
 
-    pub fn get_top_pixel(&self, _pixel_x: Wrapping<u8>, _pixel_y: Wrapping<u8>) -> (PaletteIndex, Option<u8>) {
+    pub fn get_top_pixel(
+        &self,
+        _pixel_x: Wrapping<u8>,
+        _pixel_y: Wrapping<u8>,
+    ) -> (PaletteIndex, Option<u8>) {
         /*
         let color_index = 0;
         //let object_index = PixelObject::BgColor;
