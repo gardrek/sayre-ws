@@ -3,54 +3,71 @@
 
 use crate::gfx;
 
+use std::fmt::Debug;
+use std::fmt::Display;
 use std::ops::*;
 
-pub trait BasicMath {}
-
-impl<T> BasicMath for T where T: Add + Sub + Mul + Div {}
-
-/*
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vector<const N: usize, T>(pub [T; N]) where T: BasicMath;
-*/
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vector<const N: usize>(pub [f64; N]);
-
-pub fn new_2d(x: f64, y: f64) -> Vector<2> {
-    Vector::<2>([x, y])
+pub trait Vectorable:
+    Neg<Output = Self>
+    + Add<Self, Output = Self>
+    + Sub<Self, Output = Self>
+    + Mul<Self, Output = Self>
+    + Div<Self, Output = Self>
+    + Copy
+{
 }
 
-pub fn new_3d(x: f64, y: f64, z: f64) -> Vector<3> {
-    Vector::<3>([x, y, z])
+impl<T> Vectorable for T where
+    T: Neg<Output = Self>
+        + Add<Self, Output = Self>
+        + Sub<Self, Output = Self>
+        + Mul<Self, Output = Self>
+        + Div<Self, Output = Self>
+        + Copy
+{
 }
 
-impl Vector<2> {
-    pub fn x(&self) -> f64 {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vector<const N: usize, T>(pub [T; N])
+where
+    T: Vectorable;
+
+//~ #[derive(Debug, Clone, Copy, PartialEq)]
+//~ pub struct Vector<const N: usize>(pub [f64; N]);
+
+impl<T: Vectorable> Vector<2, T> {
+    pub fn x(&self) -> T {
         self.0[0]
     }
 
-    pub fn y(&self) -> f64 {
+    pub fn y(&self) -> T {
         self.0[1]
     }
 
-    pub fn rotate_by_angle(&self, angle: f64) -> Vector<2> {
+    pub fn unpack(&self) -> (T, T) {
+        let Vector([x, y]) = self;
+        (*x, *y)
+    }
+
+    pub fn rotate_by_vector(&self, other: Self) -> Self {
+        let new_x = self.x() * other.x() - self.y() * other.y();
+        let new_y = self.x() * other.y() + self.y() * other.x();
+        Self([new_x, new_y])
+    }
+}
+
+impl Vector<2, f64> {
+    pub fn rotate_by_angle(&self, angle: f64) -> Self {
         let cos_a = angle.cos();
         let sin_a = angle.sin();
         let new_x = self.x() * cos_a - self.y() * sin_a;
         let new_y = self.x() * sin_a + self.y() * cos_a;
-        Vector::<2>([new_x, new_y])
+        Vector([new_x, new_y])
     }
 
-    pub fn rotate_by_vector(&self, other: Vector<2>) -> Vector<2> {
-        let new_x = self.x() * other.x() - self.y() * other.y();
-        let new_y = self.x() * other.y() + self.y() * other.x();
-        Vector::<2>([new_x, new_y])
-    }
-
-    pub fn draw<T: gfx::RenderTarget>(
+    pub fn draw<G: gfx::RenderTarget>(
         &self,
-        target: &mut T,
+        target: &mut G,
         x: f64,
         y: f64,
         scale: f64,
@@ -98,7 +115,7 @@ impl Vector<2> {
     }
 }
 
-impl Vector<3> {
+impl Vector<3, f64> {
     pub fn x(&self) -> f64 {
         self.0[0]
     }
@@ -110,16 +127,21 @@ impl Vector<3> {
     pub fn z(&self) -> f64 {
         self.0[2]
     }
+
+    pub fn unpack(&self) -> (f64, f64, f64) {
+        let Vector([x, y, z]) = self;
+        (*x, *y, *z)
+    }
 }
 
-impl<const N: usize> Default for Vector<N> {
+impl<const N: usize> Default for Vector<N, f64> {
     fn default() -> Self {
         Vector::zero()
     }
 }
 
-impl<const N: usize> Vector<N> {
-    pub fn zero() -> Vector<N> {
+impl<const N: usize> Vector<N, f64> {
+    pub fn zero() -> Self {
         Vector([0.0; N])
     }
 
@@ -131,89 +153,89 @@ impl<const N: usize> Vector<N> {
         self.0.iter().fold(0.0, |acc, x| acc + x * x)
     }
 
-    pub fn dot(&self, other: &Vector<N>) -> f64 {
+    pub fn dot(&self, other: &Self) -> f64 {
         self.0
             .iter()
             .zip(other.0.iter())
             .fold(0.0, |acc, (x, y)| acc + x * y)
     }
 
-    pub fn project2d(&self, other: &Vector<N>) -> Vector<N> {
+    pub fn project2d(&self, other: &Self) -> Self {
         let n = self.dot(other);
         let n = n / other.magsqr();
         *other * n
     }
 
-    pub fn norm(&self) -> Vector<N> {
+    pub fn norm(&self) -> Self {
         *self / self.mag()
     }
 
-    pub fn abs(&self) -> Vector<N> {
+    pub fn abs(&self) -> Self {
         let a = self.0.iter().map(|x| x.abs());
 
-        a.collect::<Vector<N>>()
+        a.collect::<Self>()
     }
 }
 
 // Vector unary op(s)
 
-impl<const N: usize> Neg for Vector<N> {
+impl<const N: usize, T: Vectorable> Neg for Vector<N, T> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        let a = self.0.iter().map(|x| -x);
+        let a = self.0.iter().map(|&x| -x);
 
-        a.collect::<Vector<N>>()
+        a.collect::<Self>()
     }
 }
 
 // Vector-Vector binary op(s)
 
-impl<const N: usize> Add for Vector<N> {
+impl<const N: usize, T: Vectorable> Add for Vector<N, T> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
-        let a = self.0.iter().zip(other.0.iter()).map(|(a, b)| a + b);
+        let a = self.0.iter().zip(other.0.iter()).map(|(&a, &b)| a + b);
 
-        a.collect::<Vector<N>>()
+        a.collect::<Self>()
     }
 }
 
-impl<const N: usize> Sub for Vector<N> {
+impl<const N: usize, T: Vectorable> Sub for Vector<N, T> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
-        let a = self.0.iter().zip(other.0.iter()).map(|(a, b)| a - b);
+        let a = self.0.iter().zip(other.0.iter()).map(|(&a, &b)| a - b);
 
-        a.collect::<Vector<N>>()
+        a.collect::<Self>()
     }
 }
 
 // Vector-float binary op(s)
 
-impl<const N: usize> Mul<f64> for Vector<N> {
+impl<const N: usize, T: Vectorable> Mul<T> for Vector<N, T> {
     type Output = Self;
 
-    fn mul(self, other: f64) -> Self::Output {
-        let a = self.0.iter().map(|a| a * other);
+    fn mul(self, other: T) -> Self::Output {
+        let a = self.0.iter().map(|&a| a * other);
 
-        a.collect::<Vector<N>>()
+        a.collect::<Self>()
     }
 }
 
-impl<const N: usize> Div<f64> for Vector<N> {
+impl<const N: usize, T: Vectorable> Div<T> for Vector<N, T> {
     type Output = Self;
 
-    fn div(self, other: f64) -> Self::Output {
-        let a = self.0.iter().map(|a| a / other);
+    fn div(self, other: T) -> Self::Output {
+        let a = self.0.iter().map(|&a| a / other);
 
-        a.collect::<Vector<N>>()
+        a.collect::<Self>()
     }
 }
 
 // misc
 
-impl<const N: usize> std::fmt::Display for Vector<N> {
+impl<const N: usize, T: Vectorable + Display> Display for Vector<N, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "Vector(")?;
 
@@ -227,14 +249,19 @@ impl<const N: usize> std::fmt::Display for Vector<N> {
     }
 }
 
-impl<const N: usize> FromIterator<f64> for Vector<N> {
-    fn from_iter<T: IntoIterator<Item = f64>>(iter: T) -> Self {
-        Vector::<N>(iter.into_iter().collect::<Vec<_>>().try_into().unwrap())
+impl<const N: usize, T: Vectorable> FromIterator<T> for Vector<N, T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Vector::<N, T>(
+            iter.into_iter()
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
+        )
     }
 }
 
-impl<const N: usize> IntoIterator for Vector<N> {
-    type Item = f64;
+impl<const N: usize, T: Vectorable> IntoIterator for Vector<N, T> {
+    type Item = T;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {

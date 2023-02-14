@@ -1,6 +1,10 @@
+// sayre/src/mob.rs
+
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
-use super::snd::SoundClip;
+//~ use super::snd::SoundClip;
 use super::vector::Vector;
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +58,8 @@ pub enum Direction {
 pub enum MobState {
     #[default]
     Walk,
+    Invuln,
+    Attack,
 }
 
 #[derive(Default, Clone)]
@@ -89,8 +95,8 @@ pub enum AttackType {
 pub struct Mob {
     // probably required to actually a mob
     state: MobState,
-    pos: Vector<2>,
-    delta_pos: Vector<2>,
+    pos: Vector<2, f64>,
+    delta_pos: Vector<2, f64>,
     dir: usize,
 
     // name
@@ -123,8 +129,8 @@ pub struct Mob {
 
 #[derive(Default, Clone)]
 pub struct Hitbox {
-    corner: Vector<2>,
-    dimensions: Vector<2>,
+    corner: Vector<2, f64>,
+    dimensions: Vector<2, f64>,
 }
 
 impl InputState {
@@ -182,7 +188,7 @@ impl Mob {
 
             local prevdir = self.dir
 
-            --FIXME: makes for sliding, but you face the right way so
+            // FIXME: makes for sliding, but you face the right way so (???)
             xdir, ydir = delta:unpack()
             if xdir > 0 then xdir = 1 end
             if xdir < 0 then xdir = -1 end

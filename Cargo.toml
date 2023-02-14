@@ -3,6 +3,7 @@
 members = [
     "vfc",
     "sayre",
+    "minifb-frontend",
 ]
 
 
