@@ -1,7 +1,6 @@
 use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
 
 use sayre::vfc::Rgb;
-use sayre::vfc::Vfc;
 use sayre::vfc::SCREEN_HEIGHT as HEIGHT;
 use sayre::vfc::SCREEN_WIDTH as WIDTH;
 
@@ -33,12 +32,17 @@ fn main() {
 
     // Limit to max 64 fps cause why not
     window.limit_update_rate(Some(std::time::Duration::from_micros(16125)));
+    //~ window.limit_update_rate(Some(std::time::Duration::from_micros(80625)));
 
     //~ panic!();
 
-    let mut old_pixel = 0;
+    let mut old_pixel = yellow;
+
+    let mut start_time;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        start_time = std::time::Instant::now();
+
         if window.is_key_pressed(Key::F9, KeyRepeat::No) {
             vfc.bg_layers[0].hidden = !vfc.bg_layers[0].hidden;
         }
@@ -51,31 +55,15 @@ fn main() {
 
         //~ oam_0.x += 1;
 
-        vfc.oam[sayre::vfc::OamIndex(0)].x += 1;
-
-        vfc.bg_layers[0].x += 1;
-
-        /*
-        for (i, pixel) in buffer.iter_mut().enumerate() {
-            let xi = i as usize % WIDTH;
-            //~ let x = 0;
-            let yi = i as usize / WIDTH;
-            //~ let y = 0;
-
-            let index = Vfc::get_fb_pixel_index(xi as u8, yi as u8);
-
-            let rx = xi as u8;
-            let ry = yi as u8;
-
-            //~ let b = oam_0.bounding_box_contains_pixel(rx, ry);
-            let b = false;
-            let c = rx == oam_0.x || ry == oam_0.y || rx == oam_0.x + 7 || ry == oam_0.y + 7;
-
-            *pixel = if b && c { yellow } else { vfc.framebuffer[index].as_argb_u32() };
-            //~ let m = WIDTH.max(HEIGHT);
-            //~ *pixel = ((x * 255 / m) ^ (y * 255 / m)) as u32;
+        {
+            let obj = &mut vfc.oam[sayre::vfc::OamIndex(0)];
+            obj.y = obj.y.wrapping_add(1)
         }
-        */
+
+        {
+            let layer = &mut vfc.bg_layers[0];
+            layer.x = layer.x.wrapping_add(1)
+        }
 
         {
             let pixel = buffer.iter_mut().next().unwrap();
@@ -83,7 +71,12 @@ fn main() {
             old_pixel = (*pixel).clone();
         }
 
-        // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
+        // We unwrap here as we want this code to exit if it fails.
+        // Real applications may want to handle this in a different way
         window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
+
+        let end_time = std::time::Instant::now();
+
+        eprintln!("{:?}", 1000 / (end_time - start_time).as_millis());
     }
 }

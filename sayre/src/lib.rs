@@ -320,12 +320,9 @@ pub fn main() -> Vfc {
         let entry = vfc::OamEntry {
             x: tile_x.wrapping_mul(spacing).wrapping_add(4),
             y: tile_y.wrapping_mul(spacing).wrapping_add(1),
-            rotation: Rotation(0),
-            priority: 0,
             tile_index: TileIndex((tile_x / 2 + tile_y / 2) % 2 + 2),
 
-            // offset into the palette to find the colors for this object
-            palette_offset: PaletteIndex(0),
+            attributes: TileAttributes::default(),
         };
 
         vfc.oam.0[i as usize] = entry;
@@ -346,7 +343,7 @@ pub fn main() -> Vfc {
 
         vfc.oam.0[(i + 8) as usize] = entry;
         // */
-        vfc.oam.0[(i + 8) as usize].rotation = Rotation(i);
+        vfc.oam.0[(i + 8) as usize].attributes.set_rotation(i);
     }
 
     /*

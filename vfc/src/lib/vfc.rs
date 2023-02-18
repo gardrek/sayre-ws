@@ -13,6 +13,7 @@ pub const NUM_OAM_ENTRIES: usize = 256;
 pub const TILE_SIZE: usize = 8;
 pub const TILE_WIDTH: usize = TILE_SIZE;
 pub const TILE_HEIGHT: usize = TILE_SIZE;
+pub const OBJECTS_PER_LINE: usize = 16;
 
 // background layer constants
 pub const NUM_BG_LAYERS: usize = 3;
@@ -31,6 +32,7 @@ pub struct Vfc {
     pub framebuffer: [Rgb; NUM_SCREEN_PIXELS],
     //~ pub indexed_framebuffer: [PaletteIndex; NUM_SCREEN_PIXELS],
     pub oam: OamTable,
+    //~ sorted_objects: [[Option<OamIndex>; OBJECTS_PER_LINE]; SCREEN_HEIGHT],
     pub palette: Palette,
     pub background_color: PaletteIndex,
     pub tileset: Tileset,
@@ -47,17 +49,22 @@ pub struct OamTable(pub [OamEntry; NUM_OAM_ENTRIES]);
 //  |    |     |
 // [+] [ + ] [ + ]
 // 7 6 5 4 3 2 1 0
+//     | | |
+//     | | Flip X
+//     | Flip Y
+//     Flip Diagonal
 #[derive(Debug, Clone)]
 pub struct OamEntry {
     pub x: u8,
     pub y: u8,
-    pub priority: u8,
     pub tile_index: TileIndex,
 
-    pub rotation: Rotation,
     // offset into the palette to find the colors for this object
-    // it's multiplied by 8 to get the actual offset
-    pub palette_offset: PaletteIndex,
+    // TODO: it should be multiplied by 8 to get the actual offset
+    //~ pub palette_offset: PaletteIndex,
+    //~ pub rotation: Rotation,
+    //~ pub priority: u8,
+    pub attributes: TileAttributes,
 }
 
 #[repr(transparent)]
@@ -132,7 +139,10 @@ impl Rgb {
     }
 }
 
-// TODO: why the hell is this a PaletteIndex? it's 8 pixel bits packed into a byte
+// FIXME: why is there rotation data here what the hell
+// absolutely need to fix this, there's no reason for the tileset to have rotation data
+// NOTE: why the hell is this a PaletteIndex? answer: it's 8 PaletteIndex bits packed into a byte
+// so like it's probably fine idk. probably better without tho
 pub struct Tileset {
     pub pixel_data: [[[PaletteIndex; BYTES_PER_TILE_PLANE]; NUM_TILES]; NUM_PLANES],
     pub rotation_data: [Rotation; NUM_TILES],
@@ -148,6 +158,7 @@ pub struct Tile<'a> {
     pub rotation: Rotation,
 }
 
+// TODO: implement per-tile rotation
 #[derive(Debug)]
 pub struct BgLayer {
     pub x: u8,
@@ -156,8 +167,40 @@ pub struct BgLayer {
     pub hidden: bool,
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct TileAttributes(u8);
+
+impl TileAttributes {
+    pub fn palette(&self) -> PaletteIndex {
+        PaletteIndex(self.0 & 0b111)
+    }
+
+    pub fn rotation(&self) -> u8 {
+        (self.0 >> 3) & 0b111
+    }
+
+    pub fn flip_diagonal(&self) -> bool {
+        (self.0 >> 3) & 1 != 0
+    }
+
+    pub fn flip_x(&self) -> bool {
+        (self.0 >> 4) & 1 != 0
+    }
+
+    pub fn flip_y(&self) -> bool {
+        (self.0 >> 5) & 1 != 0
+    }
+
+    pub fn priority(&self) -> u8 {
+        (self.0 >> 6) & 0b11
+    }
+
+    pub fn set_rotation(&mut self, rotation: u8) {
+        self.0 |= rotation & 0b111 << 3;
+    }
+}
+
 impl Tile<'_> {
-    // [&[PaletteIndex; BYTES_PER_TILE_PLANE]; NUM_PLANES]
     // get a pixel in local coords
     pub fn get_pixel(&self, pixel_x: u8, pixel_y: u8) -> PaletteIndex {
         let pixel_x = pixel_x % TILE_WIDTH as u8;
@@ -196,6 +239,15 @@ impl Tile<'_> {
 }
 
 impl OamEntry {
+    pub fn new(x: u8, y: u8, tile_index: TileIndex, attributes: TileAttributes) -> Self {
+        Self {
+            x,
+            y,
+            tile_index,
+            attributes,
+        }
+    }
+
     pub fn bounding_box_contains_pixel(&self, x: u8, y: u8) -> bool {
         let left = self.x;
         let right = self.x.wrapping_add(TILE_WIDTH as u8);
@@ -238,46 +290,6 @@ impl OamEntry {
         tile.get_pixel(pixel_x, pixel_y)
     }
 
-    /*
-    // get a pixel in local coords
-    pub fn get_pixel(&self, tileset: &Tileset, pixel_x: u8, pixel_y: u8) -> PaletteIndex {
-        let pixel_x = pixel_x % TILE_WIDTH as u8;
-        let pixel_y = pixel_y % TILE_HEIGHT as u8;
-
-        let tile = tileset.get_tile(self.tile_index);
-
-        let flip_x = self.rotation.0 & 1 != 0;
-        let flip_y = (self.rotation.0 >> 1) & 1 != 0;
-        let flip_diagonal = (self.rotation.0 >> 2) & 1 != 0;
-
-        let (pixel_x, pixel_y) = if flip_diagonal {
-            (pixel_y as usize, pixel_x as usize)
-        } else {
-            (pixel_x as usize, pixel_y as usize)
-        };
-
-        let pixel_x = if flip_x {
-            pixel_x
-        } else {
-            TILE_WIDTH - 1 - pixel_x
-        };
-
-        let pixel_y = if flip_y {
-            TILE_WIDTH - 1 - pixel_y
-        } else {
-            pixel_y
-        };
-
-        // NOTE: does not work with tiles wider than 8 pixels
-        let mut pixel = 0;
-        for plane_index in 0..NUM_PLANES {
-            pixel = (pixel << 1) | ((tile[plane_index][pixel_y].0 as usize >> pixel_x) & 1);
-        }
-
-        PaletteIndex(pixel as u8)
-    }
-    */
-
     // get a pixel in screen coords
     pub fn get_pixel_global(&self, tileset: &Tileset, screen_x: u8, screen_y: u8) -> PaletteIndex {
         let local_x = screen_x.wrapping_sub(self.x);
@@ -299,12 +311,11 @@ impl Tileset {
         }
     }
 
-    // TODO: implement per-tile rotation
-    pub fn get_tile_rotation(&self, tile_index: TileIndex) -> Rotation {
+    fn get_tile_rotation(&self, tile_index: TileIndex) -> Rotation {
         self.rotation_data[tile_index.0 as usize]
     }
 
-    pub fn get_tile_pixels(
+    fn get_tile_pixels(
         &self,
         tile_index: TileIndex,
     ) -> [&[PaletteIndex; BYTES_PER_TILE_PLANE]; NUM_PLANES] {
@@ -327,7 +338,7 @@ impl Tileset {
 }
 
 impl BgLayer {
-    fn get_tile(&self, tile_x: u8, tile_y: u8) -> TileIndex {
+    fn get_tile_index(&self, tile_x: u8, tile_y: u8) -> TileIndex {
         self.tiles[tile_x.wrapping_add(tile_y.wrapping_mul(TILE_SIZE as u8)) as usize]
     }
 }
@@ -355,29 +366,30 @@ impl Vfc {
     }
 
     pub fn render_frame(&mut self) {
-        for yi in 0..SCREEN_HEIGHT {
-            for xi in 0..SCREEN_WIDTH {
-                let xi = xi as u8;
-                let yi = yi as u8;
+        //~ let object_list = &mut Default::default();
 
-                let pixel_index = Vfc::get_fb_pixel_index(xi, yi);
+        for scanline in 0..SCREEN_HEIGHT as u8 {
+            let object_list = &mut Default::default();
 
-                let LayerHit {
-                    hit: palette_index,
-                    layer: _layer,
-                    priority: _priority,
-                } = self.get_top_pixel(xi, yi);
+            self.get_objects_on_scanline_buffered(object_list, scanline);
 
-                /*
-                let palette_offset = PaletteIndex(match layer {
-                    LayerType::
-                    LayerType::
-                    _ => 0,
-                } * 8);
-                */
+            self.render_scanline(object_list, scanline);
+        }
+    }
 
-                self.framebuffer[pixel_index] = self.palette[palette_index];
-            }
+    pub fn render_scanline(&mut self, object_list: &mut [Option<OamIndex>; OBJECTS_PER_LINE], yi: u8) {
+        //~ let object_list = self.get_objects_on_scanline(yi);
+
+        for xi in 0..SCREEN_WIDTH as u8 {
+            let pixel_index = Vfc::get_fb_pixel_index(xi, yi);
+
+            let LayerHit {
+                hit: palette_index,
+                layer: _layer,
+                priority: _priority,
+            } = self.get_top_pixel(&object_list, xi, yi);
+
+            self.framebuffer[pixel_index] = self.palette[palette_index];
         }
     }
 
@@ -409,7 +421,7 @@ impl Vfc {
             let tile_pixel_x = relative_x % TILE_SIZE as u8;
             let tile_pixel_y = relative_y % TILE_SIZE as u8;
 
-            let tile_index = layer.get_tile(tile_x, tile_y);
+            let tile_index = layer.get_tile_index(tile_x, tile_y);
 
             // TODO: there's no offset that allows backgrounds to use tile data past the first 256 tiles
             let tile = self.tileset.get_tile(tile_index);
@@ -447,49 +459,79 @@ impl Vfc {
         })
     }
 
-    // write to a slice/vec all objects whose bounding box includes this pixel,
-    // in layer order, up to a maximum number
-    fn get_objects_at_pixel(&self, max_len: usize, pixel_x: u8, pixel_y: u8) -> Vec<OamIndex> {
-        //~ pub fn get_objects_at_pixel(&self, output: &mut [OamEntry], pixel_x: u8, pixel_y: u8) {
-        let mut vec = vec![];
-        //~ let max_len = output.len();
-        if max_len == 0 {
-            return vec;
+    fn get_objects_on_scanline_buffered(
+        &self,
+        output_list: &mut [Option<OamIndex>; OBJECTS_PER_LINE],
+        scanline: u8,
+    ) {
+        let mut list_index = 0;
+
+        for object_index in 0..NUM_OAM_ENTRIES {
+            let object = &self.oam[OamIndex(object_index as u8)];
+
+            if scanline >= object.y && scanline < object.y.wrapping_add(TILE_HEIGHT as u8) {
+                output_list[list_index] = Some(OamIndex(object_index as u8));
+
+                list_index += 1;
+
+                if list_index >= OBJECTS_PER_LINE {
+                    break;
+                }
+            }
         }
-        //~ let mut index = 0;
-        'l: {
-            for priority in (0..NUM_OBJECT_PRIORITY_LEVELS).rev() {
-                for (index, oam_entry) in self.oam.0.iter().enumerate() {
-                    if priority as u8 == oam_entry.priority
-                        && oam_entry.bounding_box_contains_pixel(pixel_x, pixel_y)
-                    {
-                        vec.push(OamIndex(index as u8));
-                        //~ output[index] = oam_entry.clone();
-                        //~ index += 1;
-                        if index >= max_len - 1 {
-                            break 'l;
-                        }
+    }
+
+    fn get_objects_on_scanline(&self, scanline: u8) -> [Option<OamIndex>; OBJECTS_PER_LINE] {
+        let sorted_objects = &mut Default::default();
+
+        fn insert(list: &mut [Option<OamIndex>; OBJECTS_PER_LINE], index: OamIndex) {
+            for idx in 0..OBJECTS_PER_LINE {
+                match list[idx] {
+                    Some(_) => continue,
+                    None => {
+                        list[idx] = Some(index);
+                        return;
                     }
                 }
             }
         }
-        vec
+
+        for object_index in 0..NUM_OAM_ENTRIES {
+            let object = &self.oam[OamIndex(object_index as u8)];
+            if scanline >= object.y && scanline < object.y.wrapping_add(TILE_HEIGHT as u8) {
+                insert(sorted_objects, OamIndex(object_index as u8));
+            }
+        }
+
+        *sorted_objects
     }
 
-    fn get_top_pixel(&self, pixel_x: u8, pixel_y: u8) -> LayerHit {
-        //~ let object_list = self.get_objects_at_pixel(NUM_OAM_ENTRIES, pixel_x, pixel_y);
-        let object_list = self.get_objects_at_pixel(16, pixel_x, pixel_y);
-
-        // TODO: does this properly account for priority? investigate
+    fn get_top_pixel(
+        &self,
+        object_list: &[Option<OamIndex>; OBJECTS_PER_LINE],
+        pixel_x: u8,
+        pixel_y: u8,
+    ) -> LayerHit {
         let oam_hit = 'l: {
             for index in object_list.iter() {
+                let index = match index {
+                    Some(index) => index,
+                    None => continue,
+                };
+
                 let oam_entry = &self.oam[*index];
+
+                if pixel_x < oam_entry.x || pixel_x >= oam_entry.x + TILE_WIDTH as u8 {
+                    continue;
+                }
+
                 let pixel = oam_entry.get_pixel_global(&self.tileset, pixel_x, pixel_y);
+
                 if pixel != PaletteIndex(0) {
                     break 'l Some(LayerHit {
                         hit: pixel,
                         layer: LayerType::Oam(*index),
-                        priority: oam_entry.priority,
+                        priority: oam_entry.attributes.priority(),
                     });
                 }
             }
@@ -497,7 +539,6 @@ impl Vfc {
         };
 
         let bg_hit = self.bg_layer_hit(pixel_x, pixel_y);
-        //~ let bg_hit: Option<LayerHit> = None;
 
         let hit = 'l: {
             for priority in (0..(NUM_OBJECT_PRIORITY_LEVELS as u8)).rev() {
@@ -519,42 +560,6 @@ impl Vfc {
             }
             None
         };
-
-        /*
-        let hits = (0..(NUM_OBJECT_PRIORITY_LEVELS as u8)).map(|priority| {
-            let oam_priority = oam_hit.as_ref().map(|h| {
-                let LayerHit {
-                    hit: _hit,
-                    layer: _layer,
-                    priority: oam_priority,
-                } = h;
-                *oam_priority
-            }).unwrap_or(0);
-
-            let bg_priority = bg_hit.as_ref().map(|h| {
-                let LayerHit {
-                    hit: _hit,
-                    layer: _layer,
-                    priority: bg_priority,
-                } = h;
-                *bg_priority
-            }).unwrap_or(0);
-
-            if priority == bg_priority {
-                bg_hit.clone()
-            } else if priority == oam_priority {
-                oam_hit.clone()
-            } else {
-                None
-            }
-        }).collect::<Vec<_>>();
-
-        for hit in hits.into_iter().rev() {
-            if let Some(r) = hit {
-                return r;
-            }
-        }
-        */
 
         hit.unwrap_or(LayerHit {
             hit: self.background_color,
@@ -605,10 +610,8 @@ impl Default for OamEntry {
         Self {
             x: 0,
             y: SCREEN_HEIGHT as u8,
-            rotation: Rotation(0),
-            priority: 1,
             tile_index: TileIndex(0),
-            palette_offset: PaletteIndex(0),
+            attributes: TileAttributes(0),
         }
     }
 }
