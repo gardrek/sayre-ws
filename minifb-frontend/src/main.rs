@@ -22,7 +22,7 @@ fn main() {
         panic!("{}", e);
     });
 
-    let rgb_yel = Rgb(0xcc, 0xaa, 0x22);
+    let rgb_yel = Rgb::new(0xcc, 0xaa, 0x22);
 
     //~ let yellow = 0xcc * 0x10000 + 0xaa * 0x100 + 0x22;
     let yellow = rgb_yel.as_argb_u32();
@@ -34,11 +34,21 @@ fn main() {
     window.limit_update_rate(Some(std::time::Duration::from_micros(16125)));
     //~ window.limit_update_rate(Some(std::time::Duration::from_micros(80625)));
 
+    // Limit to max ~640 fps cause why not
+    window.limit_update_rate(Some(std::time::Duration::from_micros(1612)));
+
     //~ panic!();
 
     let mut old_pixel = yellow;
 
     let mut start_time;
+
+    let mut frametime_hist = std::collections::VecDeque::from(vec![]);
+
+    for _ in 0..5 {
+        frametime_hist.push_back(0);
+    }
+
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         start_time = std::time::Instant::now();
@@ -77,6 +87,22 @@ fn main() {
 
         let end_time = std::time::Instant::now();
 
-        eprintln!("{:?}", 1000 / (end_time - start_time).as_millis());
+        //~ let instant_fps = 1_000 / (end_time - start_time).as_millis();
+
+        let instant_microsecs_per_frame = (end_time - start_time).as_micros();
+
+        frametime_hist.pop_front().expect("fifo wrong length");
+
+        frametime_hist.push_back(instant_microsecs_per_frame);
+
+        let mut average = 0;
+        for i in 0..5 {
+            average += frametime_hist[i];
+        }
+        average /= 5;
+
+        eprintln!("{instant_microsecs_per_frame:?}\t{average:?}");
+        //~ eprintln!("{instant_fps:?}");
+        //~ eprintln!("{instant_fps:?}\t {:?}");
     }
 }
