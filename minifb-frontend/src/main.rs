@@ -28,14 +28,14 @@ fn main() {
     let yellow = rgb_yel.as_argb_u32();
 
     // Limit to max ~60 fps update rate
-    //~ window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
     // Limit to max 64 fps cause why not
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16125)));
+    //~ window.limit_update_rate(Some(std::time::Duration::from_micros(16125)));
     //~ window.limit_update_rate(Some(std::time::Duration::from_micros(80625)));
 
     // Limit to max ~640 fps cause why not
-    window.limit_update_rate(Some(std::time::Duration::from_micros(1612)));
+    //~ window.limit_update_rate(Some(std::time::Duration::from_micros(1612)));
 
     //~ panic!();
 
@@ -48,7 +48,6 @@ fn main() {
     for _ in 0..5 {
         frametime_hist.push_back(0);
     }
-
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         start_time = std::time::Instant::now();
@@ -95,13 +94,15 @@ fn main() {
 
         frametime_hist.push_back(instant_microsecs_per_frame);
 
-        let mut average = 0;
+        let mut average_frametime = 0;
         for i in 0..5 {
-            average += frametime_hist[i];
+            average_frametime += frametime_hist[i];
         }
-        average /= 5;
+        average_frametime /= 5;
 
-        eprintln!("{instant_microsecs_per_frame:?}\t{average:?}");
+        let average_fps = 1_000_000 / average_frametime;
+
+        eprintln!("{instant_microsecs_per_frame:?}\t{average_frametime:?}\t{average_fps}");
         //~ eprintln!("{instant_fps:?}");
         //~ eprintln!("{instant_fps:?}\t {:?}");
     }

@@ -1,3 +1,5 @@
+//
+
 // screen constants
 pub const SCREEN_WIDTH: usize = 192;
 pub const SCREEN_HEIGHT: usize = 160; // 144?
@@ -6,7 +8,8 @@ pub const NUM_SCREEN_PIXELS: usize = SCREEN_WIDTH * SCREEN_HEIGHT;
 // tile constants
 pub const NUM_PLANES: usize = 3;
 pub const BYTES_PER_TILE_PLANE: usize = TILE_WIDTH * TILE_HEIGHT / 8;
-pub const NUM_TILES: usize = 4;
+pub const TILE_INDEX_BITS: usize = 8;
+pub const NUM_TILES: usize = 2_usize.pow(TILE_INDEX_BITS as u32);
 
 // oam constants
 pub const NUM_OAM_ENTRIES: usize = 256;
@@ -24,7 +27,8 @@ pub const NUM_BG_TILES: usize = BG_WIDTH * BG_HEIGHT;
 pub const NUM_BG_PRIORITY_LEVELS: usize = 2;
 
 // misc constants
-pub const NUM_PALETTE_ENTRIES: usize = 256;
+pub const NUM_PALETTE_ENTRIES: usize = 64;
+pub const TILE_PALETTE_SIZE: usize = 2_usize.pow(NUM_PLANES as u32);
 pub const NUM_OBJECT_PRIORITY_LEVELS: usize = 4;
 
 pub struct Vfc {
@@ -42,17 +46,6 @@ pub struct Vfc {
 #[repr(transparent)]
 pub struct OamTable(pub [OamEntry; NUM_OAM_ENTRIES]);
 
-// TODO: eventually we'll pack palette, rotation, and priority into one byte
-// priority
-//  |  Rotation
-//  |    |  palette
-//  |    |     |
-// [+] [ + ] [ + ]
-// 7 6 5 4 3 2 1 0
-//     | | |
-//     | | Flip X
-//     | Flip Y
-//     Flip Diagonal
 #[derive(Debug, Clone)]
 pub struct OamEntry {
     pub x: u8,
@@ -112,7 +105,13 @@ impl std::ops::Index<TileIndex> for Tileset {
 
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct Palette(pub [Rgb; NUM_PALETTE_ENTRIES]);
+pub struct Palette([Rgb; NUM_PALETTE_ENTRIES]);
+
+impl Palette {
+    pub fn new(p: [Rgb; NUM_PALETTE_ENTRIES]) -> Palette {
+        Palette(p)
+    }
+}
 
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -184,7 +183,7 @@ pub struct Tile<'a> {
 pub struct BgLayer {
     pub x: u8,
     pub y: u8,
-    tiles: [TileIndex; NUM_BG_TILES],
+    pub tiles: [TileIndex; NUM_BG_TILES],
     pub hidden: bool,
 }
 
@@ -528,7 +527,7 @@ impl Vfc {
         })
     }
 
-    fn get_objects_on_scanline_buffered(
+    fn _get_objects_on_scanline_buffered(
         &self,
         output_list: &mut [Option<OamIndex>; OBJECTS_PER_LINE],
         scanline: u8,
@@ -593,15 +592,15 @@ impl Vfc {
             for priority in (0..(NUM_OBJECT_PRIORITY_LEVELS as u8)).rev() {
                 let oam_priority = oam_hit.as_ref().map(|hit| hit.priority);
                 let bg_priority = bg_hit.as_ref().map(|hit| hit.priority);
-                match (bg_priority, oam_priority) {
+                match (oam_priority, bg_priority) {
                     (Some(p), _) => {
                         if priority == p {
-                            break 'l bg_hit;
+                            break 'l oam_hit;
                         }
                     }
                     (None, Some(p)) => {
                         if priority == p {
-                            break 'l oam_hit;
+                            break 'l bg_hit;
                         }
                     }
                     (None, None) => continue,
@@ -688,7 +687,6 @@ impl Vfc {
                     & 1)
         });
         //~ */
-
         /*
         let mut pixel = 0;
         for plane_index in 0..NUM_PLANES {

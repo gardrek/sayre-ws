@@ -6,5 +6,10 @@ members = [
     "minifb-frontend",
 ]
 
+[profile.dev]
+opt-level = 1
 
+# Set the default for dependencies.
+[profile.dev.package."*"]
+opt-level = 3
 

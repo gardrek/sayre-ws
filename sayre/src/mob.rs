@@ -4,6 +4,10 @@
 
 use std::collections::HashMap;
 
+use super::constants::*;
+//~ use super::item::Item;
+use super::mob_drop::MobDrop;
+
 //~ use super::snd::SoundClip;
 use super::vector::Vector;
 
@@ -90,6 +94,9 @@ pub enum AttackType {
     Projectile,
 }
 
+#[derive(Default, Clone)]
+pub struct Animation;
+
 // TODO: break this up into different components
 #[derive(Default, Clone)]
 pub struct Mob {
@@ -113,18 +120,25 @@ pub struct Mob {
     cooldowns: CooldownMap,
 
     // attackable
-    hearts: u8,
+    health: usize, // current health (in fractional hearts defined by HEART_VALUE)
+    hearts: usize, // max health in whole hearts
     resistances: Resistances,
     hitbox: Option<Hitbox>,
 
     // drawable
-    draworder: usize,
+    draw_order: f64,
     rotation_type: RotationType,
-    //~ animation: Animation,
+    animation: Option<Animation>,
+
+    // drops
+    drops: Option<Vec<MobDrop>>,
+    on_death: Option<fn(&Mob) -> Vec<Mob>>,
 
     // not sure how best to implement this because of aliasing rules
     // copy for now?
     last_damage_source: Option<Box<Mob>>,
+
+    projectile_cooldown: Option<usize>,
 }
 
 #[derive(Default, Clone)]
@@ -160,7 +174,7 @@ impl Hitbox {
 
 impl Mob {
     fn set_draw_order(&mut self) {
-        todo!()
+        self.draw_order = self.pos.y() * 512.0 + self.pos.x();
     }
 
     fn update_state(&mut self) {
@@ -216,12 +230,15 @@ impl Mob {
     }
 
     fn update_cooldowns(&mut self) {
-        /*
-        if self.projectile_cooldown and self.projectile_cooldown > 0 then
-            self.projectile_cooldown = self.projectile_cooldown - 1
-        end
-        */
-        todo!()
+        self.projectile_cooldown = if let Some(cooldown) = self.projectile_cooldown {
+            if cooldown > 0 {
+                Some(cooldown - 1)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
     }
 
     fn env_collision(&mut self) {
@@ -272,8 +289,248 @@ impl Mob {
 
         self.env_collision();
     }
+
+    fn is_dead(&self) -> bool {
+        self.health <= 0
+    }
+
+    fn heal(&mut self, raw_amount: Option<f64>) {
+        let amount = match raw_amount {
+            Some(a) => a as usize,
+            None => self.hearts * HEART_VALUE,
+        };
+
+        self.health = (self.health + amount).min(self.hearts * HEART_VALUE);
+    }
+
+    fn inherit(self, _template: Mob) -> Mob {
+        /* mob.lua
+        for k, v in pairs(template) do
+            if type(v) == 'table' then
+                if k == 'collision' then
+                    local c = {
+                        tags = v.tags and recursive_copy(v.tags) or {},
+                        mob = self,
+                        onhit = v.onhit,
+                        on_hit_env = v.on_hit_env,
+                        screenborder_timer = v.screenborder_timer,
+                    }
+                    if v.rotating_hitbox then
+                        c.rotating_hitbox = new_hitbox(v.rotating_hitbox)
+                        c.hitbox = new_hitbox(v.rotating_hitbox)
+                    end
+                    if v.hitbox then
+                        c.hitbox = new_hitbox(v.hitbox)
+                    end
+                    self[k] = c
+                elseif type(v.dup) == 'function' then
+                    self[k] = v:dup()
+                else
+                    self[k] = recursive_copy(v)
+                end
+            else
+                self[k] = v
+            end
+        end
+
+        if self.hearts and not self.health then
+            self.health = self.hearts * 16
+        end
+
+        setmetatable(self, ThisClass)
+        return self
+        */
+
+        todo!()
+    }
+
+    /*
+    function Mob:start_state(state)
+        self.state = state
+        if self.anim then
+            if self.anim.states[state] and self.anim.states[state] then
+                self.anim.state = self.anim.states[state]
+                self.anim.timer = 0
+                self.anim.start = true
+            else
+                self.anim.state = false
+                self.anim.timer = 0
+                self.anim.start = false
+            end
+        end
+    end
+    */
+    fn start_state(&mut self, state: MobState) {
+        self.state = state;
+        if let Some(_anim) = &mut self.animation {
+            todo!()
+        }
+    }
+
+    fn change_state(&mut self, state: MobState) {
+        self.start_state(state)
+    }
+
+    fn is_invuln(&self) -> bool {
+        self.state == MobState::Invuln
+    }
+
+    fn __lt(&self, other: &Mob) -> bool {
+        return self.draw_order < other.draw_order;
+    }
+
+    fn do_death(&self) -> Vec<Mob> {
+        let mut mobs = vec![];
+
+        if let Some(drops) = &self.drops {
+            for v in drops.iter() {
+                if let Some(item) = &v.roll() {
+                    mobs.push(item.make_pickup(self.pos));
+                }
+            }
+        }
+
+        if let Some(on_death) = &self.on_death {
+            mobs.extend_from_slice(&on_death(&self)[..]);
+        }
+
+        mobs
+    }
+
+    fn take_damage(&mut self, /* col */ _source: &Mob) {
+        use MobState::*;
+
+        if self.state == Invuln {
+            let mut _damage = 0;
+            todo!()
+        }
+        /*
+        if self.state ~= 'invuln' then
+            local damage = 0
+            if type(col) == 'number' then
+                damage = col
+                error("[DEPRECATED]")
+            else
+                if col.tags.damage then
+                    damage = col.tags.damage
+                end
+
+                if col.mob then
+                    self.last_hit_by = col.mob
+                end
+
+                local knockback
+                if col.tags.knockback then
+                    if col.tags.knockbacktype == 'parent_dir' then
+                        knockback = self.pos - col.mob.pos
+                        if knockback == Vector:new{0, 0} then
+                            knockback = dir2vec[math.random(0, 3)]
+                        else
+                            if math.abs(knockback.x) > math.abs(knockback.y) then
+                                knockback = dir2vec[0] * (knockback.x > 0 and 1 or -1)
+                            else
+                                knockback = dir2vec[1] * (knockback.y > 0 and 1 or -1)
+                            end
+                        end
+                        --print(knockback)
+                    elseif col.tags.knockbacktype == 'opposite_dir' then
+                        knockback = -dir2vec[self.dir] * col.tags.knockback
+                    elseif col.tags.knockbacktype == 'self_dir' then
+                        knockback = dir2vec[col.mob.dir] * col.tags.knockback
+                    else
+                        error('invalid knockback type ' .. tostring(col.tags.knockbacktype))
+                    end
+                    --self.delta_pos = self.delta_pos + knockback:norm() * col.tags.knockback * (1 - self.resistance.knockback[1]) - self.resistance.knockback[2]
+                    self.knockback_delta =
+                        knockback:norm() * col.tags.knockback * (1 - self.resistance.knockback[1]) - self.resistance.knockback[2]
+                end
+                    --self.pos = self.pos + Vector:new{10, 10}
+            end
+
+            if self.take_damage_sound then
+                self.take_damage_sound:replay()
+            end
+            local resistance = self.damage_resistance and self.damage_resistance or 1 -- ???
+
+            local final_damage = damage
+            --[[ TODO: make better weakness and resistance system
+            if self.weakness and type(col) == 'table' then
+                final_damage = self.weakness(col.mob, final_damage)
+            end
+            ]]
+            final_damage = math.ceil(final_damage * resistance)
+
+            self.health = self.health - final_damage
+            self:start_state'invuln'
+        end
+        */
+    }
+
+    /*
+    function Mob:recieve_input()
+        self.input_last_frame = {}
+        for k, v in pairs(self.input) do
+            self.input_last_frame[k] = v
+        end
+
+        for _, v in ipairs{'up', 'down', 'left', 'right'} do
+            self.input[v] = love.keyboard.isDown(v) and 1 or 0
+        end
+        self.input.use_left = love.keyboard.isDown('z') and 1 or 0
+        self.input.use_right = love.keyboard.isDown('x') and 1 or 0
+        self.input.use_left_reserve = love.keyboard.isDown('a') and 1 or 0
+        self.input.use_right_reserve = love.keyboard.isDown('s') and 1 or 0
+        self.input.left_shoulder = love.keyboard.isDown('lshift') and 1 or 0
+        self.input.right_shoulder = love.keyboard.isDown('lctrl') and 1 or 0
+
+        self.input_hold_time = self.input_hold_time or {}
+        for k, v in pairs(self.input) do
+            --if v == 1 then
+                --self.input_hold_time[k] = (self.input_hold_time[k] or 0) + 1
+            --else
+                --self.input_hold_time[k] = false
+            --end
+            self.input_hold_time[k] = v == 1 and ((self.input_hold_time[k] or 0) + 1) or 0
+        end
+    --  prinspect(self.input_hold_time)
+    end
+
+    function Mob:overlaps(other)
+        if self.collision and other.collision then
+            local hb0 = self.collision.hitbox
+            local topleft0 = self.pos + hb0.corner
+            local bottomright0 = topleft0 + hb0.dim
+
+            local hb1 = other.collision.hitbox
+            local topleft1 = other.pos + hb1.corner
+            local bottomright1 = topleft1 + hb1.dim
+
+            local minkowski = {
+                topleft = topleft0 - bottomright1,
+                dim = hb0.dim + hb1.dim,
+            }
+
+            minkowski.bottomright = minkowski.topleft + minkowski.dim
+
+            if
+                minkowski.topleft.x < 0 and
+                minkowski.topleft.y < 0 and
+                minkowski.bottomright.x > 0 and
+                minkowski.bottomright.y > 0 then
+                    return true -- return penetration vector instead?
+            else
+                return false
+            end
+        else
+            error'mobs do not both have collision data'
+        end
+    end
+
+    return Mob
+    */
 }
 
+// Returns new position on base_axis, second_axis, and ... direction of movement?
 fn alignmove(
     mut base_axis: f64,
     mut second_axis: f64,
@@ -315,225 +572,6 @@ fn alignmove(
 
     (base_axis, second_axis, dir)
 }
-
-/* mob.lua
-function Mob:inherit(template)
-  for k, v in pairs(template) do
-    if type(v) == 'table' then
-      if k == 'collision' then
-        local c = {
-          tags = v.tags and recursive_copy(v.tags) or {},
-          mob = self,
-          onhit = v.onhit,
-          on_hit_env = v.on_hit_env,
-          screenborder_timer = v.screenborder_timer,
-        }
-        if v.rotating_hitbox then
-          c.rotating_hitbox = new_hitbox(v.rotating_hitbox)
-          c.hitbox = new_hitbox(v.rotating_hitbox)
-        end
-        if v.hitbox then
-          c.hitbox = new_hitbox(v.hitbox)
-        end
-        self[k] = c
-      elseif type(v.dup) == 'function' then
-        self[k] = v:dup()
-      else
-        self[k] = recursive_copy(v)
-      end
-    else
-      self[k] = v
-    end
-  end
-
-  if self.hearts and not self.health then
-    self.health = self.hearts * 16
-  end
-
-  setmetatable(self, ThisClass)
-  return self
-end
-*/
-
-/*
-
-function Mob:setDrawOrder()
-    self.draworder = self.pos.y * 512 + self.pos.x
-end
-
-function Mob:take_damage(col)
-    if self.state ~= 'invuln' then
-        local damage = 0
-        if type(col) == 'number' then
-            damage = col
-            error("[DEPRECATED]")
-        else
-            if col.tags.damage then
-                damage = col.tags.damage
-            end
-
-            if col.mob then
-                self.last_hit_by = col.mob
-            end
-
-            local knockback
-            if col.tags.knockback then
-                if col.tags.knockbacktype == 'parent_dir' then
-                    knockback = self.pos - col.mob.pos
-                    if knockback == Vector:new{0, 0} then
-                        knockback = dir2vec[math.random(0, 3)]
-                    else
-                        if math.abs(knockback.x) > math.abs(knockback.y) then
-                            knockback = dir2vec[0] * (knockback.x > 0 and 1 or -1)
-                        else
-                            knockback = dir2vec[1] * (knockback.y > 0 and 1 or -1)
-                        end
-                    end
-                    --print(knockback)
-                elseif col.tags.knockbacktype == 'opposite_dir' then
-                    knockback = -dir2vec[self.dir] * col.tags.knockback
-                elseif col.tags.knockbacktype == 'self_dir' then
-                    knockback = dir2vec[col.mob.dir] * col.tags.knockback
-                else
-                    error('invalid knockback type ' .. tostring(col.tags.knockbacktype))
-                end
-                --self.delta_pos = self.delta_pos + knockback:norm() * col.tags.knockback * (1 - self.resistance.knockback[1]) - self.resistance.knockback[2]
-                self.knockback_delta =
-                    knockback:norm() * col.tags.knockback * (1 - self.resistance.knockback[1]) - self.resistance.knockback[2]
-            end
-                --self.pos = self.pos + Vector:new{10, 10}
-        end
-
-        if self.take_damage_sound then
-            self.take_damage_sound:replay()
-        end
-        local resistance = self.damage_resistance and self.damage_resistance or 1 -- ???
-
-        local final_damage = damage
-        --[[ TODO: make better weakness and resistance system
-        if self.weakness and type(col) == 'table' then
-            final_damage = self.weakness(col.mob, final_damage)
-        end
-        ]]
-        final_damage = math.ceil(final_damage * resistance)
-
-        self.health = self.health - final_damage
-        self:start_state'invuln'
-    end
-end
-
-function Mob:heal(ammount)
-    ammount = ammount or self.hearts * HEART_VALUE
-    self.health = math.min(self.health + ammount, self.hearts * HEART_VALUE)
-end
-
-function Mob:is_dead()
-    return self.health <= 0
-end
-
-function Mob:start_state(state)
-    self.state = state
-    if self.anim then
-        if self.anim.states[state] and self.anim.states[state] then
-            self.anim.state = self.anim.states[state]
-            self.anim.timer = 0
-            self.anim.start = true
-        else
-            self.anim.state = false
-            self.anim.timer = 0
-            self.anim.start = false
-        end
-    end
-end
-
-Mob.changeState = Mob.start_state
-
-function Mob:isInvuln()
-    return self.state == 'invuln'
-end
-
-function Mob:recieve_input()
-    self.input_last_frame = {}
-    for k, v in pairs(self.input) do
-        self.input_last_frame[k] = v
-    end
-
-    for _, v in ipairs{'up', 'down', 'left', 'right'} do
-        self.input[v] = love.keyboard.isDown(v) and 1 or 0
-    end
-    self.input.use_left = love.keyboard.isDown('z') and 1 or 0
-    self.input.use_right = love.keyboard.isDown('x') and 1 or 0
-    self.input.use_left_reserve = love.keyboard.isDown('a') and 1 or 0
-    self.input.use_right_reserve = love.keyboard.isDown('s') and 1 or 0
-    self.input.left_shoulder = love.keyboard.isDown('lshift') and 1 or 0
-    self.input.right_shoulder = love.keyboard.isDown('lctrl') and 1 or 0
-
-    self.input_hold_time = self.input_hold_time or {}
-    for k, v in pairs(self.input) do
-        --if v == 1 then
-            --self.input_hold_time[k] = (self.input_hold_time[k] or 0) + 1
-        --else
-            --self.input_hold_time[k] = false
-        --end
-        self.input_hold_time[k] = v == 1 and ((self.input_hold_time[k] or 0) + 1) or 0
-    end
---  prinspect(self.input_hold_time)
-end
-
-function Mob:do_death()
-    local mobs = {}
-    if self.drops then
-        for _, v in pairs(self.drops) do
-            local item = v:roll()
-            if item then
-                table.insert(mobs, item:make_pickup(self.pos))
-            end
-        end
-    end
-    if self.on_death then
-        local mobs2 = self:on_death()
-        if mobs2 then
-            for _, v in ipairs(mobs2) do
-                table.insert(mobs, v)
-            end
-        end
-    end
-    return mobs
-end
-
-function Mob:overlaps(other)
-    if self.collision and other.collision then
-        local hb0 = self.collision.hitbox
-        local topleft0 = self.pos + hb0.corner
-        local bottomright0 = topleft0 + hb0.dim
-
-        local hb1 = other.collision.hitbox
-        local topleft1 = other.pos + hb1.corner
-        local bottomright1 = topleft1 + hb1.dim
-
-        local minkowski = {
-            topleft = topleft0 - bottomright1,
-            dim = hb0.dim + hb1.dim,
-        }
-
-        minkowski.bottomright = minkowski.topleft + minkowski.dim
-
-        if
-            minkowski.topleft.x < 0 and
-            minkowski.topleft.y < 0 and
-            minkowski.bottomright.x > 0 and
-            minkowski.bottomright.y > 0 then
-                return true -- return penetration vector instead?
-        else
-            return false
-        end
-    else
-        error'mobs do not both have collision data'
-    end
-end
-
-return Mob
-*/
 
 /* main.lua
 function Mob:draw(pos_offset)
@@ -667,9 +705,5 @@ function Mob:env_collision()
     self.delta_pos = self.delta_pos / 2
     if self.delta_pos:mag() < 0.01 then self.delta_pos = Vector:new{0, 0} end
     return hit
-end
-
-function Mob:__lt(other)
-    return self.draworder < other.draworder
 end
 */
