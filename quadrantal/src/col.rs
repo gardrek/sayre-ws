@@ -15,7 +15,7 @@ const COLLIDE_BLOCK_A: u8 = 0b1000_0000;
 const COLLIDE_BLOCK_B: u8 = 0b1100_0000;
 
 fn collision_test(a: u8, mask: u8) -> bool {
-    ((a & COLLIDE_TEST_MASK) ^ mask) != 0
+    ((a & COLLIDE_TEST_MASK) ^ mask) == 0
 }
 
 fn tile_test(a: TileIndex, mask: u8) -> bool {

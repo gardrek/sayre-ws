@@ -88,6 +88,16 @@ fn render_to_argb_u32(framebuffer: &[vfc::Rgb; vfc::NUM_SCREEN_PIXELS], target_b
     }
 }
 
+
+fn clear_sprites(fc: &mut vfc::Vfc) {
+    let range = 0..=63;
+    for i in range {
+        fc.oam.0[i].y = vfc::SCREEN_HEIGHT as u8;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 fn main() {
     use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
     use vfc::*;
@@ -165,7 +175,7 @@ fn main() {
 
     let pieces = {
         let pieces_initial = (0..8)
-            .map(|i| Piece::new_basic(i).shrink_wrap_square().unwrap())
+            .map(|i| Piece::new_basic(i).shrink_wrap_square())
             .collect::<Vec<_>>();
 
         let pieces_with_rotations = (0..4)
@@ -185,6 +195,12 @@ fn main() {
 
     // rotation of current piece (0..=3)
     let mut current_rotation: usize = 0;
+
+    // offset, in tiles, to top-left corner of piece's bounding box
+    let mut piece_x = 1;
+    let mut piece_y = 1;
+
+    tet::init_playfield(&mut fc);
 
     //----\\ MAIN LOOP //----\\
 
@@ -207,11 +223,40 @@ fn main() {
             fc.bg_layers[1].hidden = !fc.bg_layers[1].hidden;
         }
 
+        if window.is_key_pressed(Key::F, KeyRepeat::No) {
+            let piece = &pieces[current_rotation][current_piece];
+            piece.lock(&mut fc, piece_x, piece_y);
+        }
+
+        if window.is_key_pressed(Key::K, KeyRepeat::No) {
+            current_piece = current_piece.wrapping_add(1) % 8;
+            let piece = &pieces[current_rotation][current_piece];
+        }
+
+        if window.is_key_pressed(Key::I, KeyRepeat::No) {
+            current_piece = current_piece.wrapping_sub(1) % 8;
+            let piece = &pieces[current_rotation][current_piece];
+        }
+
+        if window.is_key_pressed(Key::L, KeyRepeat::No) {
+            current_rotation = current_rotation.wrapping_add(1) % 4;
+            let piece = &pieces[current_rotation][current_piece];
+        }
+
+        if window.is_key_pressed(Key::J, KeyRepeat::No) {
+            current_rotation = current_rotation.wrapping_sub(1) % 4;
+        }
+
         //----\\ LOGIC //----\\
 
         //~ todo!()
 
         //----\\ RENDERING //----\\
+
+        clear_sprites(&mut fc);
+
+        let piece = &pieces[current_rotation][current_piece];
+        piece.draw_as_sprites(&mut fc, piece_x * 8, piece_y * 8, 0);
 
         fc.render_frame();
 

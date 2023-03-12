@@ -1,5 +1,7 @@
 use vfc::TileIndex;
 
+use super::col;
+
 const NUM_TET: usize = 8;
 const TET_H: usize = 2;
 const TET_W: usize = 4;
@@ -52,7 +54,7 @@ const fn make_tetrominos_from_data(
         while yi < TET_H {
             let mut xi = 0;
             while xi < TET_W {
-                out[piece][yi][xi] = TileIndex(data[piece][yi][xi]);
+                out[piece][yi][xi] = TileIndex(data[piece][yi][xi] * TILE_BLOCK.0);
                 xi += 1;
             }
             yi += 1;
@@ -137,11 +139,89 @@ impl Piece {
         self.data[i] = tile
     }
 
+    pub fn lock(&self, fc: &mut vfc::Vfc, x: usize, y: usize) {
+        for yi in 0..self.height() {
+            for xi in 0..self.width() {
+                let tet_tile = self.get_tile(xi, yi);
+
+                if col::tile_is_solid(tet_tile) {
+                    poke_bg0(fc, x + xi, y + yi, tet_tile);
+                }
+            }
+        }
+    }
+
+    pub fn draw_as_sprites(
+        &self,
+        fc: &mut vfc::Vfc,
+        x: usize,
+        y: usize,
+        mut sprite_index_offset: usize,
+    ) {
+        for yi in 0..self.height() {
+            for xi in 0..self.width() {
+                let tet_tile = self.get_tile(xi, yi);
+
+                if col::tile_is_solid(tet_tile) {
+                    let sprite = &mut fc.oam.0[sprite_index_offset];
+
+                    sprite.x = (x + xi * 8) as u8;
+                    sprite.y = (y + yi * 8) as u8;
+
+                    sprite.tile_index = tet_tile;
+
+                    //~ sprite.attributes = todo!();
+
+                    sprite_index_offset += 1;
+                }
+            }
+        }
+    }
+
     /// Centers the piece in the smallest square that fits it.
-    /// Returns None if size < widest part of shape.
     /// Does not currently support spieces with multiple disconnected parts.
-    pub fn shrink_wrap_square(self) -> Option<Piece> {
-        let mut data = vec![];
+    pub fn shrink_wrap_square(self) -> Piece {
+        let mut first_data = vec![];
+        let mut width = self.width();
+        let mut height = self.height();
+
+        let mut rows = vec![];
+        let mut columns = vec![];
+
+        for yi in 0..self.height() {
+            let mut accumulator = 0;
+            for xi in 0..self.width() {
+                accumulator |= self.get_tile(xi, yi).0;
+            }
+            if accumulator != 0 {
+                rows.push(yi);
+            } else {
+                height -= 1;
+            }
+        }
+
+        for xi in 0..self.width() {
+            let mut accumulator = 0;
+            for yi in 0..self.height() {
+                accumulator |= self.get_tile(xi, yi).0;
+            }
+            if accumulator != 0 {
+                columns.push(xi);
+            } else {
+                width -= 1;
+            }
+        }
+
+        let mut yi = 0;
+        for row in rows.iter() {
+            let mut xi = 0;
+            for column in columns.iter() {
+                first_data.push(self.get_tile(*column, *row));
+
+                xi += 1;
+            }
+            yi += 1;
+        }
 
         /*
         let start_y = for yi in 0..self.height() {
@@ -165,7 +245,46 @@ impl Piece {
         };
         */
 
-        todo!()
+        /*
+            1 2 3 4 5
+        1   0 x x x x
+        2   0 0 x x x
+        3   1 0 0 x x
+        4   1 1 0 0 x
+        5   2 1 1 0 0
+        */
+
+        let new_size = width.max(height);
+
+        let x_start = (new_size - width) / 2;
+        let y_start = (new_size - height) / 2;
+        let x_end = x_start + width - 1;
+        let y_end = y_start + height - 1;
+
+        let mut data = vec![];
+
+        for yi in 0..new_size {
+            for xi in 0..new_size {
+                data.push(
+                    if xi >= x_start && xi <= x_end && yi >= y_start && yi <= y_end {
+                        let xx = xi - x_start;
+                        let yy = yi - y_start;
+
+                        let i = yy * width + xx;
+
+                        first_data[i]
+                    } else {
+                        TileIndex(0)
+                    },
+                );
+            }
+        }
+
+        Piece {
+            width: new_size,
+            height: new_size,
+            data,
+        }
     }
 
     pub fn rotate_by_quarter_angle(&self, angle: usize) -> Option<Piece> {
@@ -175,9 +294,9 @@ impl Piece {
 
         Some(match angle {
             0 => self.flip_rotate(false, false, false),
-            1 => self.flip_rotate(true, false, true),
-            2 => self.flip_rotate(false, false, true),
-            3 => self.flip_rotate(false, true, true),
+            1 => self.flip_rotate(false, true, true),
+            2 => self.flip_rotate(true, true, false),
+            3 => self.flip_rotate(true, false, true),
             _ => return None,
         })
     }
@@ -194,9 +313,9 @@ impl Piece {
                 };
 
                 let tile_x = if flip_x {
-                    tile_x
-                } else {
                     self.width - 1 - tile_x
+                } else {
+                    tile_x
                 };
 
                 let tile_y = if flip_y {
