@@ -39,6 +39,8 @@ fn main() {
 
     //~ panic!();
 
+    let mut hidden_oam = sayre::vfc::OamTable::default();
+
     let mut old_pixel = yellow;
 
     let mut start_time;
@@ -49,12 +51,36 @@ fn main() {
         frametime_hist.push_back(0);
     }
 
+    let mut frames = 0;
+
     while window.is_open() && !window.is_key_down(Key::Escape) {
         start_time = std::time::Instant::now();
+
+        if window.is_key_pressed(Key::F8, KeyRepeat::No) {
+            std::mem::swap(&mut vfc.oam, &mut hidden_oam);
+        }
 
         if window.is_key_pressed(Key::F9, KeyRepeat::No) {
             vfc.bg_layers[0].hidden = !vfc.bg_layers[0].hidden;
         }
+
+        if window.is_key_pressed(Key::F10, KeyRepeat::No) {
+            vfc.bg_layers[1].hidden = !vfc.bg_layers[1].hidden;
+        }
+
+        //~ let n = 16.0;
+        //~ let dx = ((frames as f32 / 100.0).sin() * 16.0) as u8;
+        //~ let dy = ((frames as f32 / 100.0).cos() * 16.0) as u8;
+        let n = 10.0 * std::f32::consts::PI;
+        let dx = (((frames % 100) as f32 / n).sin() * n) as i8 as u8;
+        //~ let dy = (((frames / 100) as f32).cos() * n) as u8;
+        let dy = 0;
+
+        //~ vfc.bg_layers[1].x = vfc.bg_layers[1].x.wrapping_add(dx);
+        //~ vfc.bg_layers[1].y = vfc.bg_layers[1].y.wrapping_add(dy);
+
+        vfc.bg_layers[0].y = dx;
+        vfc.bg_layers[1].y = dy;
 
         vfc.render_frame();
 
@@ -105,5 +131,7 @@ fn main() {
         eprintln!("{instant_microsecs_per_frame:?}\t{average_frametime:?}\t{average_fps}");
         //~ eprintln!("{instant_fps:?}");
         //~ eprintln!("{instant_fps:?}\t {:?}");
+
+        frames += 1;
     }
 }

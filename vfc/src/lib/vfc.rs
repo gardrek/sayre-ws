@@ -19,7 +19,7 @@ pub const TILE_HEIGHT: usize = TILE_SIZE;
 pub const OBJECTS_PER_LINE: usize = 16;
 
 // background layer constants
-pub const NUM_BG_LAYERS: usize = 3;
+pub const NUM_BG_LAYERS: usize = 2;
 pub const BG_SIZE: usize = 32;
 pub const BG_WIDTH: usize = BG_SIZE;
 pub const BG_HEIGHT: usize = BG_SIZE;
@@ -382,7 +382,15 @@ impl Tileset {
 
 impl BgLayer {
     fn get_tile_index(&self, tile_x: u8, tile_y: u8) -> TileIndex {
-        self.tiles[tile_x.wrapping_add(tile_y.wrapping_mul(TILE_SIZE as u8)) as usize]
+        let tile_x = tile_x as usize;
+        let tile_y = tile_y as usize;
+
+        // this one was a fun bug to track down
+        //~ self.tiles[tile_x.wrapping_add(tile_y.wrapping_mul(TILE_SIZE as u8)) as usize]
+
+        self.tiles[tile_x.wrapping_add(tile_y.wrapping_mul(BG_WIDTH)) as usize]
+
+        //~ self.tiles[tile_x as usize + tile_y as usize * BG_WIDTH as usize]
     }
 }
 
@@ -473,6 +481,8 @@ impl Vfc {
         let mut hit_pixel = None;
 
         for (priority, layer) in self.bg_layers.iter().enumerate() {
+            //~ let priority = priority + 1;
+
             if layer.hidden {
                 continue;
             }
@@ -488,7 +498,9 @@ impl Vfc {
 
             let tile_index = layer.get_tile_index(tile_x, tile_y);
 
-            // TODO: there's no offset that allows backgrounds to use tile data past the first 256 tiles
+            // TODO: there's no offset that allows backgrounds
+            // to use tile data past the first 256 tiles.
+            // do we want this?
             //~ let tile = self.tileset.get_tile(tile_index);
 
             //~ let pixel = tile.get_pixel(tile_pixel_x, tile_pixel_y);
@@ -496,7 +508,7 @@ impl Vfc {
             let pixel = self.get_tile_pixel(tile_index, tile_pixel_x, tile_pixel_y);
 
             if pixel != PaletteIndex(0) {
-                if priority > hit_priority {
+                if priority >= hit_priority {
                     hit_layer_index = Some(priority as u8);
                     hit_priority = priority;
                     hit_pixel = Some(pixel);

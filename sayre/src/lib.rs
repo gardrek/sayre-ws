@@ -2,6 +2,8 @@
 
 pub mod constants;
 
+pub mod prng;
+
 pub mod fp;
 pub mod vector;
 
@@ -19,7 +21,9 @@ use vfc::*;
 use image::io::Reader as ImageReader;
 
 pub fn main() -> Vfc {
-    let mut vfc = Vfc::new();
+    let mut prng = prng::Prng::new([1, 0]);
+
+    let mut fc = Vfc::new();
 
     /*
     #[rustfmt::skip]
@@ -110,7 +114,7 @@ pub fn main() -> Vfc {
         Rgb::new(0xff, 0xff, 0xff),
     ];
 
-    vfc.palette = Palette::new(
+    fc.palette = Palette::new(
         (0..NUM_PALETTE_ENTRIES)
             .map(|index| {
                 if index < 8 {
@@ -242,19 +246,20 @@ pub fn main() -> Vfc {
         .try_into()
         .unwrap_or_else(|_| unreachable!());
 
-    vfc.tileset = Tileset {
+    fc.tileset = Tileset {
         pixel_data,
         ..Tileset::default()
     };
     */
 
-    vfc.tileset = load_tileset_from_path("test_tiles.png").unwrap();
+    fc.tileset = load_tileset_from_path("test_tiles.png").unwrap();
 
     for i in 0..=255 {
-        vfc.bg_layers[0].tiles[i] = vfc::TileIndex(109);
+        //~ fc.bg_layers[0].tiles[i] = vfc::TileIndex(109);
+        fc.bg_layers[0].tiles[i] = vfc::TileIndex((prng.next().unwrap() & 0xff) as u8);
     }
 
-    for i in 0..=255u8 {
+    for i in 0..=((NUM_OAM_ENTRIES - 1) as u8) {
         //~ let spacing = 10;
         let spacing = 10;
         let columns = 16;
@@ -270,7 +275,7 @@ pub fn main() -> Vfc {
             attributes: TileAttributes::default(),
         };
 
-        vfc.oam.0[i as usize] = entry;
+        fc.oam.0[i as usize] = entry;
     }
 
     for i in 0..8 {
@@ -286,9 +291,9 @@ pub fn main() -> Vfc {
             palette_offset: PaletteIndex(0),
         };
 
-        vfc.oam.0[(i + 8) as usize] = entry;
+        fc.oam.0[(i + 8) as usize] = entry;
         // */
-        vfc.oam.0[(i + 8) as usize].attributes.set_rotation(i);
+        fc.oam.0[(i + 8) as usize].attributes.set_rotation(i);
     }
 
     /*
@@ -300,24 +305,24 @@ pub fn main() -> Vfc {
         .try_into()
         .unwrap();
 
-    vfc.palette = vfc::Palette(p);
+    fc.palette = vfc::Palette(p);
     */
 
-    //~ vfc.palette = Vfc::test_palette();
+    //~ fc.palette = Vfc::test_palette();
 
     //~ let bg_color = vfc::PaletteIndex(15);
 
-    //~ vfc.palette.0[bg_color.0 as usize] = vfc::Rgb::new(0x33, 0x77, 0xdd);
+    //~ fc.palette.0[bg_color.0 as usize] = vfc::Rgb::new(0x33, 0x77, 0xdd);
 
-    //~ vfc.background_color = bg_color;
+    //~ fc.background_color = bg_color;
 
-    vfc
+    fc
 }
 
-pub fn next_frame(vfc: &mut Vfc) -> Vec<u32> {
-    vfc.render_frame();
+pub fn next_frame(fc: &mut Vfc) -> Vec<u32> {
+    fc.render_frame();
 
-    as_argb_u32(&vfc.framebuffer)
+    as_argb_u32(&fc.framebuffer)
 }
 
 pub fn as_argb_u32(framebuffer: &[vfc::Rgb; vfc::NUM_SCREEN_PIXELS]) -> Vec<u32> {
