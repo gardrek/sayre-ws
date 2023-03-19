@@ -1,41 +1,14 @@
 //
+mod constants;
 
-// screen constants
-pub const SCREEN_WIDTH: usize = 192;
-pub const SCREEN_HEIGHT: usize = 160; // 144?
-pub const NUM_SCREEN_PIXELS: usize = SCREEN_WIDTH * SCREEN_HEIGHT;
-
-// tile constants
-pub const NUM_PLANES: usize = 3;
-pub const BYTES_PER_TILE_PLANE: usize = TILE_WIDTH * TILE_HEIGHT / 8;
-pub const TILE_INDEX_BITS: usize = 8;
-pub const NUM_TILES: usize = 2_usize.pow(TILE_INDEX_BITS as u32);
-
-// oam constants
-pub const NUM_OAM_ENTRIES: usize = 256;
-pub const TILE_SIZE: usize = 8;
-pub const TILE_WIDTH: usize = TILE_SIZE;
-pub const TILE_HEIGHT: usize = TILE_SIZE;
-pub const OBJECTS_PER_LINE: usize = 16;
-
-// background layer constants
-pub const NUM_BG_LAYERS: usize = 2;
-pub const BG_SIZE: usize = 32;
-pub const BG_WIDTH: usize = BG_SIZE;
-pub const BG_HEIGHT: usize = BG_SIZE;
-pub const NUM_BG_TILES: usize = BG_WIDTH * BG_HEIGHT;
-pub const NUM_BG_PRIORITY_LEVELS: usize = 2;
-
-// misc constants
-pub const NUM_PALETTE_ENTRIES: usize = 64;
-pub const TILE_PALETTE_SIZE: usize = 2_usize.pow(NUM_PLANES as u32);
-pub const NUM_OBJECT_PRIORITY_LEVELS: usize = 4;
+pub use constants::*;
 
 pub struct Vfc {
     // stuff goes here
     pub framebuffer: [Rgb; NUM_SCREEN_PIXELS],
     //~ pub indexed_framebuffer: [PaletteIndex; NUM_SCREEN_PIXELS],
     pub oam: OamTable,
+    pub oam_hidden: bool,
     //~ sorted_objects: [[Option<OamIndex>; OBJECTS_PER_LINE]; SCREEN_HEIGHT],
     pub palette: Palette,
     pub background_color: PaletteIndex,
@@ -115,6 +88,10 @@ impl Palette {
 
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct SubpaletteIndex(pub u8);
+
+#[repr(transparent)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct PaletteIndex(pub u8);
 
 impl std::ops::Index<PaletteIndex> for Palette {
@@ -166,7 +143,7 @@ impl Rgb {
 // NOTE: why the hell is this a PaletteIndex? answer: it's 8 PaletteIndex bits packed into a byte
 // so like it's probably fine idk. probably better without tho
 pub struct Tileset {
-    pub pixel_data: [[[PaletteIndex; BYTES_PER_TILE_PLANE]; NUM_TILES]; NUM_PLANES],
+    pub pixel_data: [[[u8; BYTES_PER_TILE_PLANE]; NUM_TILES]; NUM_PLANES],
 }
 
 #[repr(transparent)]
@@ -175,7 +152,7 @@ pub struct TileIndex(pub u8);
 
 #[derive(Debug, Clone)]
 pub struct Tile<'a> {
-    pub tile: [&'a [PaletteIndex; BYTES_PER_TILE_PLANE]; NUM_PLANES],
+    pub tile: [&'a [u8; BYTES_PER_TILE_PLANE]; NUM_PLANES],
 }
 
 // TODO: implement per-tile rotation
@@ -184,6 +161,7 @@ pub struct BgLayer {
     pub x: u8,
     pub y: u8,
     pub tiles: [TileIndex; NUM_BG_TILES],
+    pub attributes: [TileAttributes; NUM_BG_TILES],
     pub hidden: bool,
 }
 
@@ -197,31 +175,31 @@ impl TileAttributes {
         s
     }
 
-    pub fn palette(&self) -> PaletteIndex {
+    pub fn get_palette(&self) -> PaletteIndex {
         PaletteIndex(self.0 & 0b111)
     }
 
-    pub fn rotation(&self) -> u8 {
+    pub fn get_rotation(&self) -> u8 {
         (self.0 >> 3) & 0b111
     }
 
-    pub fn flip_diagonal(&self) -> bool {
+    pub fn get_flip_diagonal(&self) -> bool {
         (self.0 >> 3) & 1 != 0
     }
 
-    pub fn flip_x(&self) -> bool {
+    pub fn get_flip_x(&self) -> bool {
         (self.0 >> 4) & 1 != 0
     }
 
-    pub fn flip_y(&self) -> bool {
+    pub fn get_flip_y(&self) -> bool {
         (self.0 >> 5) & 1 != 0
     }
 
-    pub fn priority(&self) -> u8 {
+    pub fn get_priority(&self) -> u8 {
         (self.0 >> 6) & 0b11
     }
 
-    pub fn set_color(&mut self, palette_index: PaletteIndex) {
+    pub fn set_palette(&mut self, palette_index: PaletteIndex) {
         self.0 &= 0b11_111_000;
         self.0 |= palette_index.0 & 0b111;
     }
@@ -272,7 +250,7 @@ impl Tile<'_> {
         // NOTE: does not work with tiles wider than 8 pixels
         let mut pixel = 0;
         for plane_index in 0..NUM_PLANES {
-            pixel = (pixel << 1) | ((self.tile[plane_index][pixel_y].0 as usize >> pixel_x) & 1);
+            pixel = (pixel << 1) | ((self.tile[plane_index][pixel_y] as usize >> pixel_x) & 1);
         }
 
         PaletteIndex(pixel as u8)
@@ -310,6 +288,17 @@ impl OamEntry {
         horizontal && vertical
     }
 
+    fn get_color_from_index(&self, subp_index: SubpaletteIndex) -> PaletteIndex {
+        PaletteIndex(
+            subp_index.0.wrapping_add(
+                self.attributes
+                    .get_palette()
+                    .0
+                    .wrapping_mul(SUBPALETTE_SIZE as u8),
+            ),
+        )
+    }
+
     /*
     pub fn poke_pixel()
         // FIXME: support non-8x8 tiles
@@ -323,21 +312,21 @@ impl OamEntry {
             }
         }
     }
-    */
 
-    pub fn get_pixel(&self, tileset: &Tileset, pixel_x: u8, pixel_y: u8) -> PaletteIndex {
+    fn get_pixel(&self, tileset: &Tileset, pixel_x: u8, pixel_y: u8) -> PaletteIndex {
         let tile = tileset.get_tile(self.tile_index);
 
         tile.get_pixel(pixel_x, pixel_y)
     }
 
     // get a pixel in screen coords
-    pub fn get_pixel_global(&self, tileset: &Tileset, screen_x: u8, screen_y: u8) -> PaletteIndex {
+    fn get_pixel_global(&self, tileset: &Tileset, screen_x: u8, screen_y: u8) -> PaletteIndex {
         let local_x = screen_x.wrapping_sub(self.x);
         let local_y = screen_y.wrapping_sub(self.y);
 
         self.get_pixel(tileset, local_x, local_y)
     }
+    */
 }
 
 impl Tileset {
@@ -345,16 +334,14 @@ impl Tileset {
         Tileset::default()
     }
 
+    /*
     fn get_tile<'a>(&'a self, tile_index: TileIndex) -> Tile<'a> {
         Tile {
             tile: self.get_tile_pixels(tile_index),
         }
     }
 
-    fn get_tile_pixels(
-        &self,
-        tile_index: TileIndex,
-    ) -> [&[PaletteIndex; BYTES_PER_TILE_PLANE]; NUM_PLANES] {
+    fn get_tile_pixels(&self, tile_index: TileIndex) -> [&[u8; BYTES_PER_TILE_PLANE]; NUM_PLANES] {
         [(); NUM_PLANES]
             .iter()
             .enumerate()
@@ -368,11 +355,12 @@ impl Tileset {
         .try_into()
         .unwrap_or_else(|_| unreachable!())*/
     }
+    */
 
     pub fn write_tile(
         &mut self,
         tile_index: TileIndex,
-        tile: [[PaletteIndex; BYTES_PER_TILE_PLANE]; NUM_PLANES],
+        tile: [[u8; BYTES_PER_TILE_PLANE]; NUM_PLANES],
     ) {
         for (plane_index, plane) in tile.iter().enumerate() {
             self.pixel_data[plane_index][tile_index.0 as usize] = *plane;
@@ -507,11 +495,24 @@ impl Vfc {
 
             let pixel = self.get_tile_pixel(tile_index, tile_pixel_x, tile_pixel_y);
 
-            if pixel != PaletteIndex(0) {
+            let subpalette = layer.attributes[tile_index.0 as usize].get_palette();
+
+            if subpalette.0 != 0 {
+                eprintln!("{:?}", subpalette);
+            }
+
+            let colorized_pixel = PaletteIndex(
+                pixel
+                    .0
+                    .wrapping_add(subpalette.0.wrapping_mul(SUBPALETTE_SIZE as u8)),
+            );
+
+            if pixel != SubpaletteIndex(0) {
                 if priority >= hit_priority {
                     hit_layer_index = Some(priority as u8);
                     hit_priority = priority;
-                    hit_pixel = Some(pixel);
+                    hit_pixel = Some(colorized_pixel);
+                    //~ hit_pixel = Some(pixel);
                     //~ hit_pixel = Some(PaletteIndex(1));
                     break;
                 }
@@ -587,11 +588,19 @@ impl Vfc {
 
                 let pixel = self.get_tile_pixel_global(*index, pixel_x, pixel_y);
 
-                if pixel != PaletteIndex(0) {
+                let subpalette = oam_entry.attributes.get_palette();
+
+                let colorized_pixel = PaletteIndex(
+                    pixel
+                        .0
+                        .wrapping_add(subpalette.0.wrapping_mul(SUBPALETTE_SIZE as u8)),
+                );
+
+                if pixel != SubpaletteIndex(0) {
                     break 'l Some(LayerHit {
-                        hit: pixel,
+                        hit: colorized_pixel,
                         layer: LayerType::Oam(*index),
-                        priority: oam_entry.attributes.priority(),
+                        priority: oam_entry.attributes.get_priority(),
                     });
                 }
             }
@@ -602,6 +611,10 @@ impl Vfc {
 
         let hit = 'l: {
             for priority in (0..(NUM_OBJECT_PRIORITY_LEVELS as u8)).rev() {
+                if self.oam_hidden {
+                    break 'l None;
+                }
+
                 let oam_priority = oam_hit.as_ref().map(|hit| hit.priority);
                 let bg_priority = bg_hit.as_ref().map(|hit| hit.priority);
                 match (oam_priority, bg_priority) {
@@ -634,7 +647,7 @@ impl Vfc {
         tile_index: OamIndex,
         screen_x: u8,
         screen_y: u8,
-    ) -> PaletteIndex {
+    ) -> SubpaletteIndex {
         let oam_entry = &self.oam[tile_index];
 
         let tile_index = oam_entry.tile_index;
@@ -651,7 +664,7 @@ impl Vfc {
         tile_index: TileIndex,
         /* attributes: TileAttributesAttributes, */ pixel_x: u8,
         pixel_y: u8,
-    ) -> PaletteIndex {
+    ) -> SubpaletteIndex {
         let pixel_x = pixel_x % TILE_WIDTH as u8;
         let pixel_y = pixel_y % TILE_HEIGHT as u8;
 
@@ -693,7 +706,7 @@ impl Vfc {
         //~ /*
         let pixel = (0..NUM_PLANES).fold(0, |acc, plane_index| {
             (acc << 1)
-                | ((self.tileset.pixel_data[plane_index][tile_index.0 as usize][pixel_y as usize].0
+                | ((self.tileset.pixel_data[plane_index][tile_index.0 as usize][pixel_y as usize]
                     as usize
                     >> pixel_x)
                     & 1)
@@ -710,7 +723,7 @@ impl Vfc {
         }
         //~ */
 
-        PaletteIndex(pixel as u8)
+        SubpaletteIndex(pixel as u8)
     }
 }
 
@@ -730,6 +743,7 @@ impl Default for BgLayer {
     fn default() -> Self {
         Self {
             tiles: [(); NUM_BG_TILES].map(|_| TileIndex::default()),
+            attributes: [(); NUM_BG_TILES].map(|_| TileAttributes::default()),
             x: 0,
             y: 0,
             hidden: false,
@@ -741,6 +755,7 @@ impl Default for Vfc {
     fn default() -> Self {
         Self {
             oam: OamTable::default(),
+            oam_hidden: false,
             framebuffer: [(); NUM_SCREEN_PIXELS].map(|_| Rgb::default()),
             palette: Palette::default(),
             background_color: PaletteIndex::default(),
@@ -764,7 +779,7 @@ impl Default for OamEntry {
 impl Default for Tileset {
     fn default() -> Tileset {
         let pixel_data = [(); NUM_PLANES].map(|_| {
-            [(); NUM_TILES].map(|_| [(); BYTES_PER_TILE_PLANE].map(|_| PaletteIndex::default()))
+            [(); NUM_TILES].map(|_| [(); BYTES_PER_TILE_PLANE].map(|_| Default::default()))
         });
 
         Tileset { pixel_data }

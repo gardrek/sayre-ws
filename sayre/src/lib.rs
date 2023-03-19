@@ -401,7 +401,7 @@ pub fn load_tileset_from_path(path: &str) -> Result<Tileset, Box<dyn std::error:
 
                 for plane_index in 0..NUM_PLANES {
                     tileset.pixel_data[plane_index][tile_index][pixel_y] =
-                        PaletteIndex(bytes[pixel_y][plane_index]);
+                        bytes[pixel_y][plane_index];
                 }
                 println!();
             }

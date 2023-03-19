@@ -1,11 +1,6 @@
-use super::tet::peek_bg0;
-use super::tet::Piece;
+use super::piece::Piece;
+use super::tet::peek_game_layer;
 use vfc::TileIndex;
-
-const TILE_EMPTY: TileIndex = TileIndex(0x00);
-const TILE_ENTRANCE: TileIndex = TileIndex(0x01);
-const TILE_WALL: TileIndex = TileIndex(0x7f);
-const TILE_BLOCK: TileIndex = TileIndex(0x80);
 
 const COLLIDE_TEST_MASK: u8 = 0b1100_0000;
 
@@ -20,10 +15,6 @@ fn collision_test(a: u8, mask: u8) -> bool {
 
 fn tile_test(a: TileIndex, mask: u8) -> bool {
     collision_test(a.0, mask)
-}
-
-pub fn tile_is_entrance(a: TileIndex) -> bool {
-    a == TILE_ENTRANCE
 }
 
 pub fn tile_is_empty(a: TileIndex) -> bool {
@@ -46,7 +37,7 @@ pub fn test_bg0_collision(fc: &vfc::Vfc, x: usize, y: usize, piece: &Piece) -> b
     'outer: {
         for yi in 0..piece.height() {
             for xi in 0..piece.width() {
-                let bg_tile = peek_bg0(fc, x + xi, y + yi);
+                let bg_tile = peek_game_layer(fc, x + xi, y + yi);
 
                 if tile_is_solid(bg_tile) {
                     let tet_tile = piece.get_tile(xi, yi);

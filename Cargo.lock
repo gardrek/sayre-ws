@@ -335,6 +335,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hunt"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "minifb",
+ "vfc",
+]
+
+[[package]]
 name = "image"
 version = "0.24.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

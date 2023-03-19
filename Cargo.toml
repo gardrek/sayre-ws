@@ -5,6 +5,7 @@ members = [
     "sayre",
     "quadrantal",
     "minifb-frontend",
+    "hunt",
 ]
 
 [profile.dev]
