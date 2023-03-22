@@ -1,0 +1,210 @@
+(* OITJLSZ *)
+(package tetromino
+    (piece
+        (name "O")
+        (color Yellow)
+        (shape
+            .oo.
+            .oo.))
+    (piece
+        (name "I")
+        (color Cyan)
+        (shape
+            ....
+            oooo))
+    (piece
+        (name "T")
+        (color Purple)
+        (shape
+            .o..
+            ooo.))
+    (piece
+        (name "J")
+        (color Blue)
+        (shape
+            o...
+            ooo.))
+    (piece
+        (name "L")
+        (color Orange)
+        (shape
+            ..o.
+            ooo.))
+    (piece
+        (name "S")
+        (color Green)
+        (shape
+            oo..
+            .oo.))
+    (piece
+        (name "Z")
+        (color Red)
+        (shape
+            .oo.
+            oo..)))
+
+(package bits
+    (piece
+        (shape o)
+    )
+    (piece
+        (shape oo)
+    )
+    (piece
+        (shape ooo)
+    )
+    (piece
+        (shape
+            o.
+            oo))
+    )
+)
+
+(* xivutwszljkypqhnfr *)
+(package pentomino
+    (piece
+        (name "x")
+        (shape
+            ..o..
+            .ooo.
+            ..o..
+        )
+    )
+    (piece
+        (name "i")
+        (shape
+            .....
+            .....
+            ooooo
+        )
+    )
+    (piece
+        (name "v")
+        (shape
+            .o...
+            .o...
+            .ooo.
+        )
+    )
+    (piece
+        (name "u")
+        (shape
+            .....
+            .o.o.
+            .ooo.
+        )
+    )
+    (piece
+        (name "t")
+        (shape
+            ..o..
+            ..o..
+            .ooo.
+        )
+    )
+    (piece
+        (name "w")
+        (shape
+            .o...
+            .oo..
+            ..oo.
+        )
+    )
+    (piece
+        (name "s")
+        (shape
+            .oo..
+            ..o..
+            ..oo.
+        )
+    )
+    (piece
+        (name "z")
+        (shape
+            ..oo.
+            ..o..
+            .oo..
+        )
+    )
+    (piece
+        (name "j")
+        (shape
+            .....
+            ...o.
+            oooo.
+        )
+    )
+    (piece
+        (name "l")
+        (shape
+            .....
+            o....
+            oooo.
+        )
+    )
+    (piece
+        (name "k")
+        (shape
+            .....
+            .o...
+            oooo.
+        )
+    )
+    (piece
+        (name "y")
+        (shape
+            .....
+            ..o..
+            oooo.
+        )
+    )
+    (piece
+        (name "p")
+        (shape
+            .....
+            .oo..
+            .ooo.
+        )
+    )
+    (piece
+        (name "q")
+        (shape
+            .....
+            ..oo.
+            .ooo.
+        )
+    )
+    (piece
+        (name "h")
+        (shape
+            .....
+            ..oo.
+            ooo..
+        )
+    )
+    (piece
+        (name "n")
+        (shape
+            .....
+            oo...
+            .ooo.
+        )
+    )
+    (piece
+        (name "f")
+        (shape
+            ..o..
+            ..oo.
+            .oo..
+        )
+    )
+    (piece
+        (name "r")
+        (shape
+            ..o..
+            .oo..
+            ..oo.
+        )
+    )
+)
+

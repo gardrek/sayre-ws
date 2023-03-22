@@ -309,7 +309,7 @@ fn main() {
     tet::init_playfield(&mut fc);
 
     let mut controlled_piece =
-        FloatingPiece::new(piece::Piece::new_basic(0, PaletteIndex(0)), (1, 1));
+        FloatingPiece::new(piece::Piece::new_basic(0, Subpalette::new(0)), (1, 1));
 
     let mut saved_piece: Option<piece::Piece> = None;
 
@@ -465,6 +465,23 @@ fn main() {
             vertical
         };
 
+        let horizontal_move_repeat = {
+            let up = *key_down.get(&Action::Up).unwrap();
+            let down = *key_down.get(&Action::Down).unwrap();
+
+            let vertical = if up && !down {
+                -1
+            } else if down && !up {
+                1
+            } else {
+                0
+            };
+
+            vertical
+        };
+
+        //~ let horizontal_move_vector = -1;
+
         let start_button = *key_pressed.get(&Action::Start).unwrap();
         let pause_action = *key_pressed.get(&Action::Pause).unwrap() || start_button;
 
@@ -585,9 +602,9 @@ fn main() {
                 // do various drops //
 
                 if sonic_drop || hard_drop {
-                    controlled_piece.sonic_drop(&fc);
-
-                    gravity_delay_counter = gravity_delay;
+                    if controlled_piece.sonic_drop(&fc) {
+                        gravity_delay_counter = gravity_delay;
+                    }
 
                     rotate_counter = 0;
                     x_direction_switch_counter = 0;
@@ -631,10 +648,10 @@ fn main() {
                         score += if full_rows.is_empty() {
                             1
                         } else {
-                            let mut this_score = 1;
+                            let mut this_score = 5;
 
                             for _ in 0..full_rows.len() {
-                                this_score *= 4
+                                this_score *= 2
                             }
 
                             this_score
@@ -696,6 +713,12 @@ fn main() {
                             FIELD_Y + row,
                             TileIndex(TILE_ROW_CLEAR.0 + frame),
                         );
+                        poke_game_layer_palette(
+                            &mut fc,
+                            FIELD_X + column,
+                            FIELD_Y + row,
+                            Subpalette::new(0),
+                        );
                     }
                 }
 
@@ -710,6 +733,12 @@ fn main() {
 
                                 let next_tile =
                                     peek_game_layer(&mut fc, FIELD_X + column, FIELD_Y + next_row);
+
+                                let next_tile_palette = peek_game_layer_palette(
+                                    &mut fc,
+                                    FIELD_X + column,
+                                    FIELD_Y + next_row,
+                                );
 
                                 let current_tile = peek_game_layer(
                                     &mut fc,
@@ -743,6 +772,13 @@ fn main() {
                                     FIELD_X + column,
                                     FIELD_Y + current_row,
                                     next_tile,
+                                );
+
+                                poke_game_layer_palette(
+                                    &mut fc,
+                                    FIELD_X + column,
+                                    FIELD_Y + current_row,
+                                    next_tile_palette,
                                 );
                             }
                         }
@@ -948,7 +984,7 @@ fn main() {
                     shadow_pos.1 * 8,
                     offset,
                     tet::TILE_SHADOW_OFFSET.0,
-                    Some(PaletteIndex(0)),
+                    Some(Subpalette::new(0)),
                 );
 
                 // draw big next piece
@@ -962,6 +998,8 @@ fn main() {
                 let _offset = offset;
             }
         }
+
+        //~ eprintln!("{}", gravity_delay_counter);
 
         fc.render_frame();
 

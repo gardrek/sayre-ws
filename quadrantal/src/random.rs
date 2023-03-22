@@ -66,7 +66,7 @@ impl Bag {
 
         for _ in 0..self.bag_size {
             for pcid in 1..=NUM_BASIC_PIECES {
-                tmp.push(Piece::new_basic(pcid, vfc::PaletteIndex(pcid as u8)));
+                tmp.push(Piece::new_basic(pcid, vfc::Subpalette::new(pcid as u8)));
             }
         }
 

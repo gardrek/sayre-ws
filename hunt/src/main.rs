@@ -67,6 +67,7 @@ struct Game {
 }
 
 impl Game {
+    /*
     pub fn change_state(&mut self, fc: &mut Vfc, new_state: GameState) {
         use GameState::*;
 
@@ -77,6 +78,7 @@ impl Game {
 
         self.state = new_state;
     }
+    */
 
     pub fn update_features(&mut self) {
         self.displayed_features = self.map.near_rooms_features(self.player.coords);
@@ -128,14 +130,12 @@ struct Map {
 
 impl Map {
     pub fn new(rng: &mut random::Prng) -> Map {
-        let mut flat_data = [Room::default(); MAP_HEIGHT * MAP_WIDTH];
-
         use RoomFeature::*;
 
         let mut v = vec![];
 
         //~ let mut features = vec![Bat, Bat, Bat, Pit, Pit, Arrow, Dracula, PlayerStart];
-        let mut features = vec![Bat, Bat, Bat, Pit, Pit, Dracula, PlayerStart];
+        let features = vec![Bat, Bat, Bat, Pit, Pit, Dracula, PlayerStart];
 
         let len = features.len();
 
@@ -276,13 +276,6 @@ struct Room {
     //~ pit_breeze: bool,
 }
 
-fn new_room(feature: Option<RoomFeature>) -> Room {
-    Room {
-        feature,
-        ..Room::default()
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum RoomFeature {
     PlayerStart,
@@ -353,15 +346,28 @@ fn main() {
 
         // gameboy bg color
         //~ Rgb::new(0xbb, 0xbb, 0x88), // Tan
-        Rgb::new(0x00, 0x11, 0x11), // Black
+        //~ Rgb::new(0x00, 0x11, 0x11), // Black
         //
 
         // gameboy esque palette
 
         //~ /*
+        //~ Rgb::new(0xaa, 0x55, 0xaa), // Black (background)
+        Rgb::new(0x00, 0x11, 0x11), // Black (background)
         Rgb::new(0x00, 0x11, 0x11), // Black
         Rgb::new(0xcc, 0x44, 0x33), // Red
         Rgb::new(0x77, 0x99, 0xee), // Cerulean
+        Rgb::new(0x99, 0x00, 0x99), // [placeholder]
+        Rgb::new(0x99, 0x00, 0x99), // [placeholder]
+        Rgb::new(0x99, 0x00, 0x99), // [placeholder]
+        Rgb::new(0xbb, 0xbb, 0x88), // Tan
+        //~ */
+
+        //~ /*
+        Rgb::new(0x99, 0x00, 0x99), // [placeholder] (transparent)
+        Rgb::new(0x00, 0x11, 0x11), // Black
+        Rgb::new(0xdd, 0x99, 0x44), // Orange
+        Rgb::new(0x55, 0x66, 0x66), // Dull Teal
         Rgb::new(0x99, 0x00, 0x99), // [placeholder]
         Rgb::new(0x99, 0x00, 0x99), // [placeholder]
         Rgb::new(0x99, 0x00, 0x99), // [placeholder]
@@ -408,7 +414,7 @@ fn main() {
     let mut buffer: Vec<u32> = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
 
     let mut window = Window::new(
-        "Hunt the Dracula (debug - hold Escape to exit)",
+        &("Hunt the Dracula".to_owned() + " " + "(debug - hold Escape to exit)"),
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
         WindowOptions {
@@ -449,6 +455,12 @@ fn main() {
     keybinds.insert(Key::Up, Action::Up);
     keybinds.insert(Key::Down, Action::Down);
     keybinds.insert(Key::Space, Action::Fire);
+
+    keybinds.insert(Key::A, Action::Left);
+    keybinds.insert(Key::D, Action::Right);
+    keybinds.insert(Key::W, Action::Up);
+    keybinds.insert(Key::S, Action::Down);
+    keybinds.insert(Key::Enter, Action::Fire);
 
     let mut key_pressed = HashMap::new();
     let mut key_down = HashMap::new();
@@ -843,7 +855,7 @@ fn main() {
                 let mut feature_id = HashMap::new();
 
                 for (i, f) in features.iter().enumerate() {
-                    feature_id.insert(*f, i + 1);
+                    feature_id.insert(*f, i + TILE_FEATURE_ICONS);
                 }
 
                 feature_id

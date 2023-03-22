@@ -8,6 +8,7 @@ pub fn new_prng() -> Prng {
 }
 
 // implements a Fisher-Yates shuffle
+// TODO: return the number of times `next` was called?
 pub fn shuffle<T>(rng: &mut Prng, vec: &mut Vec<T>) {
     // To shuffle an array a of n elements (indices 0..n-1):
     for i in (1..vec.len()).rev() {

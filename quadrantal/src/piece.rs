@@ -1,4 +1,4 @@
-use vfc::PaletteIndex;
+use vfc::Subpalette;
 use vfc::TileIndex;
 
 use super::col;
@@ -7,6 +7,45 @@ use super::tet;
 const NUM_BASIC_PIECES_PLUS_ONE: usize = 8;
 const TET_H: usize = 2;
 const TET_W: usize = 4;
+
+/*
+// (0) O I T J L S Z
+#[rustfmt::skip]
+const TETROMINOS_DATA: [[[u8; TET_W]; TET_H]; NUM_BASIC_PIECES_PLUS_ONE] = [
+    [
+        [ 0, 0, 0, 0, ],
+        [ 0, 1, 0, 0, ],
+    ],
+    [
+        [ 0, 0, 0, 0, ],
+        [ 0, 1, 0, 0, ],
+    ],
+    [
+        [ 0, 0, 0, 0, ],
+        [ 0, 1, 1, 0, ],
+    ],
+    [
+        [ 0, 0, 0, 0, ],
+        [ 1, 1, 1, 0, ],
+    ],
+    [
+        [ 0, 1, 0, 0, ],
+        [ 0, 1, 1, 0, ],
+    ],
+    [
+        [ 1, 0, 1, 0, ],
+        [ 1, 1, 1, 0, ],
+    ],
+    [
+        [ 0, 0, 1, 1, ],
+        [ 1, 1, 1, 0, ],
+    ],
+    [
+        [ 1, 1, 0, 0, ],
+        [ 0, 1, 1, 1, ],
+    ],
+];
+*/
 
 // (0) O I T J L S Z
 #[rustfmt::skip]
@@ -57,7 +96,15 @@ const fn make_tetrominos_from_data(
             let mut xi = 0;
             while xi < TET_W {
                 let mino = data[piece][yi][xi];
-                out[piece][yi][xi] = TileIndex(mino * tet::TILE_BLOCK.0);
+                out[piece][yi][xi] = if mino > 0 {
+                    let tx = 0;
+                    let ty = 0;
+
+                    TileIndex(tet::TILE_BLOCK.0)
+                } else {
+                    TileIndex(0)
+                };
+
                 xi += 1;
             }
             yi += 1;
@@ -77,7 +124,7 @@ pub struct Piece {
     height: usize,
     data: Vec<TileIndex>,
     index: usize,
-    palette_index: PaletteIndex,
+    subpalette: Subpalette,
 }
 
 /*
@@ -96,7 +143,7 @@ impl Piece {
     pub fn new_from_array<const W: usize, const H: usize>(
         array: &[[TileIndex; W]; H],
         index: usize,
-        palette_index: PaletteIndex,
+        subpalette: Subpalette,
     ) -> Piece {
         let mut data = Vec::with_capacity(W * H);
 
@@ -111,12 +158,12 @@ impl Piece {
             height: H,
             data,
             index,
-            palette_index,
+            subpalette,
         }
     }
 
-    pub fn new_basic(shape_index: usize, palette_index: PaletteIndex) -> Piece {
-        Piece::new_from_array(&TETROMINOS[shape_index], shape_index, palette_index)
+    pub fn new_basic(shape_index: usize, subpalette: Subpalette) -> Piece {
+        Piece::new_from_array(&TETROMINOS[shape_index], shape_index, subpalette)
     }
 
     pub fn width(&self) -> usize {
@@ -129,6 +176,10 @@ impl Piece {
 
     pub fn index(&self) -> usize {
         self.index
+    }
+
+    pub fn get_subpalette(&self, _x: usize, _y: usize) -> Subpalette {
+        self.subpalette
     }
 
     fn index_from_coords(&self, x: usize, y: usize) -> usize {
@@ -171,9 +222,9 @@ impl Piece {
 
                     tet::poke_game_layer(fc, fx, fy, tet_tile);
 
-                    let palette_index = self.palette_index;
+                    let subpalette = self.subpalette;
 
-                    tet::poke_game_layer_palette(fc, fx, fy, palette_index)
+                    tet::poke_game_layer_palette(fc, fx, fy, subpalette)
                 }
             }
         }
@@ -200,6 +251,7 @@ impl Piece {
                         no_overlap_tile
                     };
 
+                    tet::poke_game_layer_palette(fc, x + xi, y + yi, self.get_subpalette(xi, yi));
                     tet::poke_game_layer(fc, x + xi, y + yi, t);
                 }
             }
@@ -217,7 +269,7 @@ impl Piece {
         y: usize,
         mut sprite_index_offset: usize,
         tile_offset: u8,
-        palette_override: Option<PaletteIndex>,
+        palette_override: Option<Subpalette>,
     ) -> usize {
         for yi in 0..self.height() {
             for xi in 0..self.width() {
@@ -232,8 +284,8 @@ impl Piece {
                     sprite.tile_index = TileIndex(tile_offset.wrapping_add(tet_tile.0));
 
                     let palette = match palette_override {
-                        Some(palette_index) => palette_index,
-                        None => self.palette_index,
+                        Some(subpalette) => subpalette,
+                        None => self.subpalette,
                     };
 
                     sprite.attributes = vfc::TileAttributes::default();
@@ -258,7 +310,7 @@ impl Piece {
         let mut width = self.width();
         let mut height = self.height();
         let index = self.index();
-        let palette_index = self.palette_index;
+        let subpalette = self.subpalette;
 
         let mut rows = vec![];
         let mut columns = vec![];
@@ -360,7 +412,7 @@ impl Piece {
             height: new_size,
             data,
             index,
-            palette_index,
+            subpalette,
         }
     }
 
@@ -600,10 +652,18 @@ impl FloatingPiece {
         self.shadow_move(fc, (0, 1), 32)
     }
 
-    pub fn sonic_drop(&mut self, fc: &vfc::Vfc) {
-        for _ in 0..32 {
-            self.try_move(fc, (0, 1));
+    pub fn sonic_drop(&mut self, fc: &vfc::Vfc) -> bool {
+        if !self.try_move(fc, (0, 1)) {
+            return false;
         }
+
+        for _ in 0..tet::FIELD_HEIGHT {
+            if !self.try_move(fc, (0, 1)) {
+                break;
+            }
+        }
+
+        true
     }
 
     pub fn soft_drop(&mut self, fc: &mut vfc::Vfc) -> bool {

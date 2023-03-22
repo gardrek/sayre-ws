@@ -1,5 +1,6 @@
 //
 mod constants;
+mod oam;
 
 pub use constants::*;
 
@@ -77,6 +78,10 @@ impl std::ops::Index<TileIndex> for Tileset {
 */
 
 #[repr(transparent)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct RawPixel(pub u8);
+
+#[repr(transparent)]
 #[derive(Clone)]
 pub struct Palette([Rgb; NUM_PALETTE_ENTRIES]);
 
@@ -88,17 +93,45 @@ impl Palette {
 
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub struct SubpaletteIndex(pub u8);
-
-#[repr(transparent)]
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct PaletteIndex(pub u8);
+
+impl PaletteIndex {
+    pub const fn new(s: u8) -> PaletteIndex {
+        PaletteIndex(s)
+    }
+
+    pub fn get(&self) -> &u8 {
+        &self.0
+    }
+}
 
 impl std::ops::Index<PaletteIndex> for Palette {
     type Output = Rgb;
 
     fn index(&self, index: PaletteIndex) -> &Self::Output {
         &self.0[index.0 as usize]
+    }
+}
+
+#[repr(transparent)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct Subpalette(u8);
+
+impl Subpalette {
+    pub const fn new(s: u8) -> Subpalette {
+        Subpalette(s)
+    }
+
+    pub fn get(&self) -> &u8 {
+        &self.0
+    }
+
+    fn colorize_pixel(&self, pixel: RawPixel) -> PaletteIndex {
+        PaletteIndex(
+            self.0
+                .wrapping_mul(SUBPALETTE_SIZE as u8)
+                .wrapping_add(pixel.0),
+        )
     }
 }
 
@@ -175,8 +208,8 @@ impl TileAttributes {
         s
     }
 
-    pub fn get_palette(&self) -> PaletteIndex {
-        PaletteIndex(self.0 & 0b111)
+    pub fn get_palette(&self) -> Subpalette {
+        Subpalette::new(self.0 & 0b111)
     }
 
     pub fn get_rotation(&self) -> u8 {
@@ -199,9 +232,9 @@ impl TileAttributes {
         (self.0 >> 6) & 0b11
     }
 
-    pub fn set_palette(&mut self, palette_index: PaletteIndex) {
+    pub fn set_palette(&mut self, subpalette: Subpalette) {
         self.0 &= 0b11_111_000;
-        self.0 |= palette_index.0 & 0b111;
+        self.0 |= subpalette.get() & 0b111;
     }
 
     pub fn set_rotation(&mut self, rotation: u8) {
@@ -288,17 +321,6 @@ impl OamEntry {
         horizontal && vertical
     }
 
-    fn get_color_from_index(&self, subp_index: SubpaletteIndex) -> PaletteIndex {
-        PaletteIndex(
-            subp_index.0.wrapping_add(
-                self.attributes
-                    .get_palette()
-                    .0
-                    .wrapping_mul(SUBPALETTE_SIZE as u8),
-            ),
-        )
-    }
-
     /*
     pub fn poke_pixel()
         // FIXME: support non-8x8 tiles
@@ -379,6 +401,13 @@ impl BgLayer {
         self.tiles[tile_x.wrapping_add(tile_y.wrapping_mul(BG_WIDTH)) as usize]
 
         //~ self.tiles[tile_x as usize + tile_y as usize * BG_WIDTH as usize]
+    }
+
+    fn get_tile_attribute(&self, tile_x: u8, tile_y: u8) -> &TileAttributes {
+        let tile_x = tile_x as usize;
+        let tile_y = tile_y as usize;
+
+        &self.attributes[tile_x.wrapping_add(tile_y.wrapping_mul(BG_WIDTH)) as usize]
     }
 }
 
@@ -495,19 +524,11 @@ impl Vfc {
 
             let pixel = self.get_tile_pixel(tile_index, tile_pixel_x, tile_pixel_y);
 
-            let subpalette = layer.attributes[tile_index.0 as usize].get_palette();
+            let subpalette = layer.get_tile_attribute(tile_x, tile_y).get_palette();
 
-            if subpalette.0 != 0 {
-                eprintln!("{:?}", subpalette);
-            }
+            let colorized_pixel = subpalette.colorize_pixel(pixel);
 
-            let colorized_pixel = PaletteIndex(
-                pixel
-                    .0
-                    .wrapping_add(subpalette.0.wrapping_mul(SUBPALETTE_SIZE as u8)),
-            );
-
-            if pixel != SubpaletteIndex(0) {
+            if pixel != RawPixel(0) {
                 if priority >= hit_priority {
                     hit_layer_index = Some(priority as u8);
                     hit_priority = priority;
@@ -588,6 +609,7 @@ impl Vfc {
 
                 let pixel = self.get_tile_pixel_global(*index, pixel_x, pixel_y);
 
+                /*
                 let subpalette = oam_entry.attributes.get_palette();
 
                 let colorized_pixel = PaletteIndex(
@@ -595,8 +617,11 @@ impl Vfc {
                         .0
                         .wrapping_add(subpalette.0.wrapping_mul(SUBPALETTE_SIZE as u8)),
                 );
+                */
 
-                if pixel != SubpaletteIndex(0) {
+                let colorized_pixel = oam_entry.attributes.get_palette().colorize_pixel(pixel);
+
+                if pixel != RawPixel(0) {
                     break 'l Some(LayerHit {
                         hit: colorized_pixel,
                         layer: LayerType::Oam(*index),
@@ -647,7 +672,7 @@ impl Vfc {
         tile_index: OamIndex,
         screen_x: u8,
         screen_y: u8,
-    ) -> SubpaletteIndex {
+    ) -> RawPixel {
         let oam_entry = &self.oam[tile_index];
 
         let tile_index = oam_entry.tile_index;
@@ -655,55 +680,14 @@ impl Vfc {
         let local_x = screen_x.wrapping_sub(oam_entry.x);
         let local_y = screen_y.wrapping_sub(oam_entry.y);
 
-        self.get_tile_pixel(tile_index, local_x, local_y)
+        self.get_tile_pixel_rotated(tile_index, &oam_entry.attributes, local_x, local_y)
     }
 
     // NOTE: does not work with tiles wider than 8 pixels
-    fn get_tile_pixel(
-        &self,
-        tile_index: TileIndex,
-        /* attributes: TileAttributesAttributes, */ pixel_x: u8,
-        pixel_y: u8,
-    ) -> SubpaletteIndex {
+    fn get_tile_pixel(&self, tile_index: TileIndex, pixel_x: u8, pixel_y: u8) -> RawPixel {
         let pixel_x = pixel_x % TILE_WIDTH as u8;
         let pixel_y = pixel_y % TILE_HEIGHT as u8;
 
-        /*
-        attributes;
-        let flip_x = self.rotation.0 & 1 != 0;
-        let flip_y = (self.rotation.0 >> 1) & 1 != 0;
-        let flip_diagonal = (self.rotation.0 >> 2) & 1 != 0;
-
-        let (pixel_x, pixel_y) = if flip_diagonal {
-            (pixel_y as usize, pixel_x as usize)
-        } else {
-            (pixel_x as usize, pixel_y as usize)
-        };
-
-        let pixel_x = if flip_x {
-            pixel_x
-        } else {
-            TILE_WIDTH - 1 - pixel_x
-        };
-
-        let pixel_y = if flip_y {
-            TILE_WIDTH - 1 - pixel_y
-        } else {
-            pixel_y
-        };
-        */
-
-        /*
-        let pixel = self.tileset.pixel_data.iter().fold(0, |acc, plane| {
-            (acc << 1)
-                | ((plane[tile_index.0 as usize][pixel_y as usize].0
-                    as usize
-                    >> pixel_x)
-                    & 1)
-        });
-        //~ */
-
-        //~ /*
         let pixel = (0..NUM_PLANES).fold(0, |acc, plane_index| {
             (acc << 1)
                 | ((self.tileset.pixel_data[plane_index][tile_index.0 as usize][pixel_y as usize]
@@ -711,19 +695,53 @@ impl Vfc {
                     >> pixel_x)
                     & 1)
         });
-        //~ */
-        /*
-        let mut pixel = 0;
-        for plane_index in 0..NUM_PLANES {
-            pixel = (pixel << 1)
-                | ((self.tileset.pixel_data[plane_index][tile_index.0 as usize][pixel_y as usize].0
+
+        RawPixel(pixel as u8)
+    }
+
+    // NOTE: does not work with tiles wider than 8 pixels
+    fn get_tile_pixel_rotated(&self, tile_index: TileIndex, attributes: &TileAttributes, pixel_x: u8, pixel_y: u8) -> RawPixel {
+        let pixel_x = pixel_x % TILE_WIDTH as u8;
+        let pixel_y = pixel_y % TILE_HEIGHT as u8;
+
+        let rotation = attributes.get_rotation();
+
+        let flip_x = rotation & 1 != 0;
+        let flip_y = (rotation >> 1) & 1 != 0;
+        let flip_diagonal = (rotation >> 2) & 1 != 0;
+        //~ let flip_x = true;
+        //~ let flip_y = false;
+        //~ let flip_diagonal = true;
+
+        let (pixel_x, pixel_y) = (pixel_x as usize, pixel_y as usize);
+
+        let pixel_x = if flip_x {
+            TILE_WIDTH - 1 - pixel_x
+        } else {
+            pixel_x
+        };
+
+        let pixel_y = if flip_y {
+            TILE_WIDTH - 1 - pixel_y
+        } else {
+            pixel_y
+        };
+
+        let (pixel_x, pixel_y) = if flip_diagonal {
+            (pixel_y, pixel_x)
+        } else {
+            (pixel_x, pixel_y)
+        };
+
+        let pixel = (0..NUM_PLANES).fold(0, |acc, plane_index| {
+            (acc << 1)
+                | ((self.tileset.pixel_data[plane_index][tile_index.0 as usize][pixel_y as usize]
                     as usize
                     >> pixel_x)
-                    & 1);
-        }
-        //~ */
+                    & 1)
+        });
 
-        SubpaletteIndex(pixel as u8)
+        RawPixel(pixel as u8)
     }
 }
 

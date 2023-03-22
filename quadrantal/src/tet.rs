@@ -1,4 +1,7 @@
+use vfc::Subpalette;
 use vfc::TileIndex;
+
+const FIELD_CLEAR_COLOR: Subpalette = Subpalette::new(0);
 
 pub const FIELD_X: usize = 7;
 //~ pub const FIELD_Y: usize = 20;
@@ -11,8 +14,9 @@ pub const TOP_VISIBLE_ROW: usize = CEILING_HEIGHT - 3;
 //~ pub const SCORE_Y: usize = FIELD_Y + FIELD_HEIGHT;
 pub const SCORE_Y: usize = FIELD_Y + TOP_VISIBLE_ROW - 1;
 
-//~ pub const TILE_EMPTY: TileIndex = TileIndex(0x00);
-pub const TILE_EMPTY: TileIndex = TileIndex(0x10);
+pub const TILE_EMPTY: TileIndex = TileIndex(0x00);
+//~ pub const TILE_EMPTY: TileIndex = TileIndex(0x66); // capital F for testing rotation
+//~ pub const TILE_EMPTY: TileIndex = TileIndex(0x10);
 pub const TILE_CEILING: TileIndex = TileIndex(0x01);
 pub const TILE_WALL: TileIndex = TileIndex(0x7f);
 pub const TILE_BLOCK: TileIndex = TileIndex(0x80);
@@ -49,13 +53,18 @@ pub fn poke_bg_attribute(
 }
 */
 
-pub fn poke_game_layer_palette(
-    fc: &mut vfc::Vfc,
-    x: usize,
-    y: usize,
-    palette_index: vfc::PaletteIndex,
-) {
+pub fn poke_game_layer_palette(fc: &mut vfc::Vfc, x: usize, y: usize, palette_index: Subpalette) {
     poke_bg_palette(0, fc, x, y, palette_index)
+}
+
+pub fn peek_game_layer_palette(fc: &mut vfc::Vfc, x: usize, y: usize) -> Subpalette {
+    peek_bg_palette(0, fc, x, y)
+}
+
+pub fn poke_bg_rotation(bg: usize, fc: &mut vfc::Vfc, x: usize, y: usize, rotation: u8) {
+    let i = (y % vfc::BG_HEIGHT) * vfc::BG_WIDTH + x % vfc::BG_WIDTH; //get_index_from_coords(x, y);
+
+    fc.bg_layers[bg].attributes[i].set_rotation(rotation);
 }
 
 pub fn poke_bg_palette(
@@ -63,13 +72,18 @@ pub fn poke_bg_palette(
     fc: &mut vfc::Vfc,
     x: usize,
     y: usize,
-    palette_index: vfc::PaletteIndex,
+    palette_index: Subpalette,
 ) {
     let mut attr =
         //~ &mut fc.bg_layers[bg].attributes[(y % vfc::BG_HEIGHT) * vfc::BG_WIDTH + x % vfc::BG_WIDTH];
         fc.bg_layers[bg].attributes[(y % vfc::BG_HEIGHT) * vfc::BG_WIDTH + x % vfc::BG_WIDTH].clone();
     attr.set_palette(palette_index);
     fc.bg_layers[bg].attributes[(y % vfc::BG_HEIGHT) * vfc::BG_WIDTH + x % vfc::BG_WIDTH] = attr;
+}
+
+pub fn peek_bg_palette(bg: usize, fc: &mut vfc::Vfc, x: usize, y: usize) -> Subpalette {
+    fc.bg_layers[bg].attributes[(y % vfc::BG_HEIGHT) * vfc::BG_WIDTH + x % vfc::BG_WIDTH]
+        .get_palette()
 }
 
 pub fn draw_text(bg: usize, fc: &mut vfc::Vfc, x: usize, y: usize, string: &str) {
@@ -87,17 +101,15 @@ pub fn init_playfield(fc: &mut vfc::Vfc) {
 
     for yi in 0..=FIELD_HEIGHT {
         // draw columns
-        poke_game_layer(fc, FIELD_X + FIELD_WIDTH, FIELD_Y + yi, TILE_WALL);
-        poke_game_layer(fc, FIELD_X - 1, FIELD_Y + yi, TILE_WALL);
+        let y = FIELD_Y + yi;
+        let left_x = FIELD_X - 1;
+        let right_x = FIELD_X + FIELD_WIDTH;
 
-        poke_bg_palette(
-            0,
-            fc,
-            FIELD_X + FIELD_WIDTH,
-            FIELD_Y + yi,
-            vfc::PaletteIndex(1),
-        );
-        poke_bg_palette(0, fc, FIELD_X - 1, FIELD_Y + yi, vfc::PaletteIndex(1));
+        poke_game_layer(fc, left_x, y, TILE_WALL);
+        poke_game_layer(fc, right_x, y, TILE_WALL);
+
+        poke_bg_palette(0, fc, left_x, y, FIELD_CLEAR_COLOR);
+        poke_bg_palette(0, fc, right_x, y, FIELD_CLEAR_COLOR);
     }
 
     clear_playfield(fc);
@@ -114,11 +126,20 @@ pub fn clear_playfield(fc: &mut vfc::Vfc) {
         for xi in 0..FIELD_WIDTH {
             //~ poke_game_layer(fc, FIELD_X + xi, FIELD_Y + yi, TileIndex((TILE_WALL.0 as usize + (xi + yi) % 2) as u8));
             poke_bg(0, fc, FIELD_X + xi, FIELD_Y + yi, TILE_EMPTY);
+            poke_game_layer_palette(fc, FIELD_X + xi, FIELD_Y + yi, FIELD_CLEAR_COLOR);
+            poke_bg_rotation(0, fc, FIELD_X + xi, FIELD_Y + yi, ((xi + yi) % 8) as u8);
         }
     }
 
     for xi in 0..FIELD_WIDTH {
         poke_bg(0, fc, FIELD_X + xi, FIELD_Y + CEILING_HEIGHT, TILE_CEILING);
+        poke_game_layer_palette(
+            fc,
+            FIELD_X + xi,
+            FIELD_Y + CEILING_HEIGHT,
+            FIELD_CLEAR_COLOR,
+        );
+
         poke_bg(1, fc, FIELD_X + xi, FIELD_Y + TOP_VISIBLE_ROW, TILE_EMPTY);
     }
 }
