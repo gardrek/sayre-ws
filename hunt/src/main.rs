@@ -2,11 +2,15 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use vfc::Vfc;
+use hli::fc;
+use hli::file;
+use hli::random;
+use hli::vector;
 
-mod fc;
-mod file;
-mod random;
-mod vector;
+//~ mod fc;
+//~ mod file;
+//~ mod random;
+//~ mod vector;
 
 use file::load_tileset_from_path;
 
@@ -660,7 +664,7 @@ fn main() {
                 if allow_move {
                     match moved {
                         Some(true) => {
-                            fc::clear_bg(0, &mut fc);
+                            fc::clear_bg_tiles(0, &mut fc);
                             //~ game.change_state(GameOver);
                             game.state = ShowRoom;
                         }
@@ -673,7 +677,7 @@ fn main() {
                 // TODO: actual game over check
 
                 if fire_pressed {
-                    fc::clear_bg(0, &mut fc);
+                    fc::clear_bg_tiles(0, &mut fc);
                     game.state = FireSelect;
                 }
 
@@ -783,7 +787,7 @@ fn main() {
                 print_message(&mut fc, Vector([1, 9]), "Press fire to continue.");
 
                 if fire_pressed {
-                    fc::clear_bg(0, &mut fc);
+                    fc::clear_bg_tiles(0, &mut fc);
                     game.state = ShowRoom;
                 }
             }
@@ -796,7 +800,7 @@ fn main() {
                 print_message(&mut fc, Vector([1, 18]), "Game Over.");
 
                 if fire_pressed {
-                    fc::clear_bg(0, &mut fc);
+                    fc::clear_bg_tiles(0, &mut fc);
                     game.state = Restart;
                 }
             }

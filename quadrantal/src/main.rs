@@ -82,7 +82,8 @@ fn main() {
 
         // bg color
         // gameboy esque palette
-        Rgb::new(0xbb, 0xbb, 0x88), // Tan
+        //~ Rgb::new(0xbb, 0xbb, 0x88), // Tan
+                                    Rgb::new(0xee, 0xee, 0xdd), // White
         Rgb::new(0x00, 0x11, 0x11), // Black
         Rgb::new(0x55, 0x66, 0x66), // Dull Teal
         Rgb::new(0x77, 0x88, 0x44), // Moss Green
@@ -465,6 +466,8 @@ fn main() {
             vertical
         };
 
+        /*
+
         let horizontal_move_repeat = {
             let up = *key_down.get(&Action::Up).unwrap();
             let down = *key_down.get(&Action::Down).unwrap();
@@ -479,6 +482,7 @@ fn main() {
 
             vertical
         };
+        */
 
         //~ let horizontal_move_vector = -1;
 

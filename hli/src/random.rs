@@ -1,5 +1,4 @@
-mod prng;
-pub use prng::Prng;
+pub use prng::Prng16 as Prng;
 
 //~ use std::collections::VecDeque;
 

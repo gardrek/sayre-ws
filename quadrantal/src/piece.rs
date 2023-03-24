@@ -97,8 +97,8 @@ const fn make_tetrominos_from_data(
             while xi < TET_W {
                 let mino = data[piece][yi][xi];
                 out[piece][yi][xi] = if mino > 0 {
-                    let tx = 0;
-                    let ty = 0;
+                    //~ let tx = 0;
+                    //~ let ty = 0;
 
                     TileIndex(tet::TILE_BLOCK.0)
                 } else {
