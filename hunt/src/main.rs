@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use vfc::Vfc;
 use hli::fc;
 use hli::file;
 use hli::random;
 use hli::vector;
+use vfc::Vfc;
 
 //~ mod fc;
 //~ mod file;
@@ -161,13 +161,13 @@ impl Map {
         Map { data }
     }
 
-    pub fn in_bounds(&self, coords: Vector<2, isize>) -> bool {
+    pub fn in_bounds(&self, coords: Vector<isize, 2>) -> bool {
         let [x, y] = coords.0;
 
         x >= 0 && x < MAP_WIDTH as isize && y >= 0 && y < MAP_HEIGHT as isize
     }
 
-    pub fn get_room(&self, coords: Vector<2, isize>) -> Option<&Room> {
+    pub fn get_room(&self, coords: Vector<isize, 2>) -> Option<&Room> {
         if !self.in_bounds(coords) {
             return None;
         }
@@ -177,7 +177,7 @@ impl Map {
         Some(&self.data[index])
     }
 
-    pub fn get_room_mut(&mut self, coords: Vector<2, isize>) -> Option<&mut Room> {
+    pub fn get_room_mut(&mut self, coords: Vector<isize, 2>) -> Option<&mut Room> {
         if !self.in_bounds(coords) {
             return None;
         }
@@ -187,20 +187,20 @@ impl Map {
         Some(&mut self.data[index])
     }
 
-    pub fn set_room_feature(&mut self, coords: Vector<2, isize>, feature: Option<RoomFeature>) {
+    pub fn set_room_feature(&mut self, coords: Vector<isize, 2>, feature: Option<RoomFeature>) {
         let room = self.get_room_mut(coords).unwrap();
 
         room.feature = feature;
     }
 
-    pub fn near_rooms_coords(&self, coords: Vector<2, isize>) -> Vec<Vector<2, isize>> {
+    pub fn near_rooms_coords(&self, coords: Vector<isize, 2>) -> Vec<Vector<isize, 2>> {
         [[-1, 0], [1, 0], [0, -1], [0, 1]]
             .iter()
             .map(|v| coords + Vector(*v))
             .collect::<Vec<_>>()
     }
 
-    pub fn near_rooms_features(&self, coords: Vector<2, isize>) -> HashSet<RoomFeature> {
+    pub fn near_rooms_features(&self, coords: Vector<isize, 2>) -> HashSet<RoomFeature> {
         let mut features = HashSet::new();
 
         for room_coords in self.near_rooms_coords(coords) {
@@ -214,7 +214,7 @@ impl Map {
         features
     }
 
-    pub fn get_player_start_coords(&self) -> Vector<2, isize> {
+    pub fn get_player_start_coords(&self) -> Vector<isize, 2> {
         for (index, room) in self.data.iter().enumerate() {
             match room.feature {
                 Some(feature) => match feature {
@@ -228,7 +228,7 @@ impl Map {
         unreachable!()
     }
 
-    pub fn get_dracula_coords(&self) -> Vector<2, isize> {
+    pub fn get_dracula_coords(&self) -> Vector<isize, 2> {
         for (index, room) in self.data.iter().enumerate() {
             match room.feature {
                 Some(feature) => match feature {
@@ -242,11 +242,11 @@ impl Map {
         unreachable!()
     }
 
-    fn coords_from_index(&self, index: usize) -> Vector<2, isize> {
+    fn coords_from_index(&self, index: usize) -> Vector<isize, 2> {
         Vector([(index % MAP_WIDTH) as isize, (index / MAP_WIDTH) as isize])
     }
 
-    fn index_from_coords(coords: Vector<2, isize>) -> usize {
+    fn index_from_coords(coords: Vector<isize, 2>) -> usize {
         coords.y() as usize * MAP_WIDTH + coords.x() as usize
     }
 }
@@ -254,7 +254,7 @@ impl Map {
 //~ impl Iter
 
 struct Player {
-    coords: Vector<2, isize>,
+    coords: Vector<isize, 2>,
     has_arrow: bool,
 }
 
@@ -316,10 +316,16 @@ impl RoomFeature {
     }
 }
 
-pub fn print_message(fc: &mut Vfc, coords: Vector<2, isize>, message: &str) {
+pub fn print_message(fc: &mut Vfc, coords: Vector<isize, 2>, message: &str) {
     //~ println!("{}", message);
 
-    fc::draw_text(0, fc, coords.x() as usize, coords.y() as usize, message);
+    let [x, y] = coords.0;
+
+    let (x, y) = (x as usize, y as usize);
+
+    fc::draw_text(0, fc, x, y, message);
+
+    fc::paint_rect_palette(0, fc, x, y, message.len(), 1, hli::vfc::Subpalette::new(1));
 
     // TODO: also/only print message to graphics background layer
 }

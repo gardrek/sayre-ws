@@ -7,7 +7,7 @@ use super::vector::Vector;
 pub struct Item {}
 
 impl Item {
-    pub fn make_pickup(&self, _pos: Vector<2, f64>) -> Mob {
+    pub fn make_pickup(&self, _pos: Vector<f64, 2>) -> Mob {
         todo!()
     }
 }

@@ -223,27 +223,19 @@ mod tests {
         let mut prng = Prng16::new([1, 0]);
 
         let expected_values = [
-            0x0201,
-            0x6269,
-            0xae16,
-            0x12a2,
-            0x4ae8,
-            0xd719,
-            0x0c52,
-            0x984b,
-            0x1df1,
-            0x743c,
-            0xdba0,
-            0xbcc6,
-            0x34c9,
-            0x746c,
-            0x3643,
-            0x07ff,
+            0x0201, 0x6269, 0xae16, 0x12a2, 0x4ae8, 0xd719, 0x0c52, 0x984b, 0x1df1, 0x743c, 0xdba0,
+            0xbcc6, 0x34c9, 0x746c, 0x3643, 0x07ff,
         ];
 
         for (i, &value) in expected_values.iter().enumerate() {
             let n = prng.next();
-            assert!(value == n, "failed at index {}: expected 0x{:04x}, found 0x{:04x}\n{value:016b}\n{n:016b}", i, value, n);
+            assert!(
+                value == n,
+                "failed at index {}: expected 0x{:04x}, found 0x{:04x}\n{value:016b}\n{n:016b}",
+                i,
+                value,
+                n
+            );
         }
     }
 }

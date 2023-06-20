@@ -58,6 +58,36 @@ pub enum Direction {
     Up,
 }
 
+impl From<Direction> for Vector<f64, 2> {
+    fn from(other: Direction) -> Self {
+        use Direction::*;
+
+        match other {
+            Right => Vector([1.0, 0.0]),
+            Down => Vector([0.0, 1.0]),
+            Left => Vector([-1.0, 0.0]),
+            Up => Vector([0.0, -1.0]),
+        }
+    }
+}
+
+impl From<u32> for Direction {
+    fn from(other: u32) -> Self {
+        use Direction::*;
+
+        match other {
+            0 => Right,
+            1 => Down,
+            2 => Left,
+            3 => Up,
+            _ => todo!(),
+        }
+    }
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub struct MobId(pub usize);
+
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub enum MobState {
     #[default]
@@ -69,16 +99,16 @@ pub enum MobState {
 #[derive(Default, Clone)]
 pub struct Resistances {
     // TODO: Fields TBD because i don't know what the two damages are
-    //~ damage = {0, 0},
-    //~ knockback = {0, 0},
+    //~ damage: [f64; 2],
+    knockback: [f64; 2],
 }
 
 #[derive(Default, Clone)]
 pub struct InputState {
-    left: usize,
-    down: usize,
-    right: usize,
-    up: usize,
+    pub left: usize,
+    pub down: usize,
+    pub right: usize,
+    pub up: usize,
     // TODO: figure out what goes in here
     //~ hold_time = {},
 }
@@ -102,9 +132,11 @@ pub struct Animation;
 pub struct Mob {
     // probably required to actually a mob
     state: MobState,
-    pos: Vector<2, f64>,
-    delta_pos: Vector<2, f64>,
-    dir: usize,
+    pos: Vector<f64, 2>,
+    delta_pos: Vector<f64, 2>,
+    knockback_delta: Vector<f64, 2>,
+    dir: Direction,
+    speed: f64,
 
     // name
     name: String,
@@ -118,12 +150,14 @@ pub struct Mob {
 
     // attacking related
     cooldowns: CooldownMap,
+    touch_damage: Option<TouchDamage>,
 
     // attackable
     health: usize, // current health (in fractional hearts defined by HEART_VALUE)
     hearts: usize, // max health in whole hearts
     resistances: Resistances,
     hitbox: Option<Hitbox>,
+    last_hit_by: Option<MobId>,
 
     // drawable
     draw_order: f64,
@@ -143,8 +177,33 @@ pub struct Mob {
 
 #[derive(Default, Clone)]
 pub struct Hitbox {
-    corner: Vector<2, f64>,
-    dimensions: Vector<2, f64>,
+    corner: Vector<f64, 2>,
+    dimensions: Vector<f64, 2>,
+}
+
+#[derive(Default, Clone)]
+pub struct TouchDamage {
+    damage: Option<usize>,
+    knockback: Option<KnockbackStruct>,
+}
+
+#[derive(Clone)]
+pub struct KnockbackStruct {
+    strength: f64,
+    typ: KnockbackType,
+}
+
+#[derive(Clone)]
+pub enum KnockbackType {
+    ParentDir,
+    OppositeDir,
+    SelfDir,
+}
+
+struct DamageSource {
+    damage: Option<usize>,
+    mob_id: Option<MobId>,
+    knockback: Option<KnockbackStruct>,
 }
 
 impl InputState {
@@ -178,55 +237,75 @@ impl Mob {
     }
 
     fn update_state(&mut self) {
-        todo!()
+        use MobState::*;
+
         /*
+
         if self.state == 'walk' or self.state == 'invuln' then
-            local delta = Vector:new{
-                self.input.right - self.input.left,
-                self.input.down - self.input.up,
-            }
-            local grid = 8
-            local xdir, ydir = 0, 0
-            local x, y
-            if math.abs(delta.x) > math.abs(delta.y) then
-                y, x, xdir = alignmove(self.pos.y, self.pos.x, math.abs(delta.x), delta.x, grid)
-            else -- by not handling x == y separately we have one axis (y) which is favored when a diagonal is pressed
-                x, y, ydir = alignmove(self.pos.x, self.pos.y, math.abs(delta.y), delta.y, grid)
-            end
-
-            self.knockback_delta = self.knockback_delta or Vector:new{0, 0}
-            self.delta_pos = self.delta_pos + (Vector:new{x, y} - self.pos) * self.speed + self.knockback_delta
-            self.knockback_delta = self.knockback_delta / 2
-            if self.knockback_delta:mag() < 0.01 then self.knockback_delta = Vector:new{0, 0} end
-
-
-            local prevdir = self.dir
-
-            // FIXME: makes for sliding, but you face the right way so (???)
-            xdir, ydir = delta:unpack()
-            if xdir > 0 then xdir = 1 end
-            if xdir < 0 then xdir = -1 end
-            if ydir > 0 then ydir = 1 end
-            if ydir < 0 then ydir = -1 end
-            if ydir == 0 then
-                if xdir == 1 then
-                    self.dir = 0
-                elseif xdir == -1 then
-                    self.dir = 2
-                end
-            else
-                if ydir == 1 then
-                    self.dir = 1
-                elseif ydir == -1 then
-                    self.dir = 3
-                end
-            end
-
-        elseif self.state == 'attack' then
-        else
-            error('mob in invalid state "' .. tostring(self.state) .. '"')
-        end
         */
+
+        match self.state {
+            Walk | Invuln => {
+                let delta = Vector([
+                    self.input.right as f64 - self.input.left as f64,
+                    self.input.down as f64 - self.input.up as f64,
+                ]);
+
+                let grid = 8.0;
+                let (mut xdir, mut ydir) = (0.0, 0.0);
+                let x;
+                let y;
+
+                if delta.x().abs() > delta.y().abs() {
+                    (y, x, xdir) =
+                        alignmove(self.pos.y(), self.pos.x(), delta.x().abs(), delta.x(), grid)
+                } else {
+                    // by not handling x == y separately we have one axis (y) which is favored when a diagonal is pressed
+                    (x, y, ydir) =
+                        alignmove(self.pos.x(), self.pos.y(), delta.y().abs(), delta.y(), grid)
+                }
+
+                // a Lua idiom to lazy initialize values or init optional parameters
+                //~ self.knockback_delta = self.knockback_delta or Vector([0.0, 0.0]);
+                self.delta_pos = self.delta_pos
+                    + (Vector([x, y]) - self.pos) * self.speed
+                    + self.knockback_delta;
+                self.knockback_delta = self.knockback_delta / 2.0;
+                if self.knockback_delta.mag() < 0.01 {
+                    self.knockback_delta = Vector([0.0, 0.0])
+                }
+
+                if xdir > 0.0 {
+                    xdir = 1.0
+                }
+                if xdir < 0.0 {
+                    xdir = -1.0
+                }
+                if ydir > 0.0 {
+                    ydir = 1.0
+                }
+                if ydir < 0.0 {
+                    ydir = -1.0
+                }
+
+                if ydir == 0.0 {
+                    if xdir == 1.0 {
+                        self.dir = Direction::Right
+                    } else if xdir == -1.0 {
+                        self.dir = Direction::Left
+                    }
+                } else {
+                    if ydir == 1.0 {
+                        self.dir = Direction::Down
+                    } else if ydir == -1.0 {
+                        self.dir = Direction::Up
+                    }
+                }
+
+                todo!()
+            }
+            Attack => { /* This space intentionally left blank */ }
+        }
     }
 
     fn update_cooldowns(&mut self) {
@@ -397,32 +476,89 @@ impl Mob {
         mobs
     }
 
-    fn take_damage(&mut self, /* col */ _source: &Mob) {
+    fn take_damage(&mut self, source: DamageSource) {
         use MobState::*;
 
-        if self.state == Invuln {
-            let mut _damage = 0;
-            todo!()
+        if self.state != Invuln {
+            let damage = if let Some(damage) = source.damage {
+                damage
+            } else {
+                0
+            };
+
+            self.last_hit_by = source.mob_id;
+
+            if let Some(knockback) = source.knockback {
+                use KnockbackType::*;
+
+                let knockback_vector = match knockback.typ {
+                    ParentDir => {
+                        //~ let knockback = self.pos - source.mob.pos // TODO: how to get Mob from MobId
+                        let knockback = Vector::<f64, 2>::zero(); // FIXME: see above
+
+                        if knockback == Vector::zero() {
+                            //~ knockback = dir2vec[math.random(0.0, 3.0)];
+                            // instead of a random direction let's just choose up
+                            Direction::Up.into()
+                        } else {
+                            if (knockback.x()).abs() > (knockback.y()).abs() {
+                                Vector::from(Direction::Right)
+                                    * if knockback.x() > 0.0 { 1.0 } else { -1.0 }
+                            } else {
+                                Vector::from(Direction::Down)
+                                    * if knockback.y() > 0.0 { 1.0 } else { -1.0 }
+                            }
+                        }
+                    }
+                    OppositeDir => -Vector::from(self.dir) * knockback.strength,
+                    SelfDir => Vector::from(self.dir) * knockback.strength,
+                };
+
+                self.knockback_delta = knockback_vector.norm()
+                    * knockback.strength
+                    * ((1.0 - self.resistances.knockback[0]) - self.resistances.knockback[1])
+            }
+
+            // this is where we'd check for damage resistances, if we had any
+            let resistance = 1.0;
+
+            // TODO: Sound
+            //~ if self.take_damage_sound then
+            //~     self.take_damage_sound:replay()
+            //~ end
+            //~ let resistance = self.damage_resistance and self.damage_resistance or 1
+
+            /*
+            TODO: make better weakness and resistance system
+            if self.weakness and type(source) == 'table' then
+                final_damage = self.weakness(source.mob, final_damage)
+            end
+            */
+
+            let final_damage = (damage as f64 * resistance).ceil() as usize;
+
+            self.health = self.health - final_damage;
+            self.start_state(Invuln);
         }
         /*
         if self.state ~= 'invuln' then
             local damage = 0
-            if type(col) == 'number' then
-                damage = col
+            if type(source) == 'number' then
+                damage = source
                 error("[DEPRECATED]")
             else
-                if col.tags.damage then
-                    damage = col.tags.damage
+                if source.tags.damage then
+                    damage = source.tags.damage
                 end
 
-                if col.mob then
-                    self.last_hit_by = col.mob
+                if source.mob then
+                    self.last_hit_by = source.mob
                 end
 
                 local knockback
-                if col.tags.knockback then
-                    if col.tags.knockbacktype == 'parent_dir' then
-                        knockback = self.pos - col.mob.pos
+                if source.tags.knockback then
+                    if source.tags.knockbacktype == 'parent_dir' then
+                        knockback = self.pos - source.mob.pos
                         if knockback == Vector:new{0, 0} then
                             knockback = dir2vec[math.random(0, 3)]
                         else
@@ -433,16 +569,16 @@ impl Mob {
                             end
                         end
                         --print(knockback)
-                    elseif col.tags.knockbacktype == 'opposite_dir' then
-                        knockback = -dir2vec[self.dir] * col.tags.knockback
-                    elseif col.tags.knockbacktype == 'self_dir' then
-                        knockback = dir2vec[col.mob.dir] * col.tags.knockback
+                    elseif source.tags.knockbacktype == 'opposite_dir' then
+                        knockback = -dir2vec[self.dir] * source.tags.knockback
+                    elseif source.tags.knockbacktype == 'self_dir' then
+                        knockback = dir2vec[source.mob.dir] * source.tags.knockback
                     else
-                        error('invalid knockback type ' .. tostring(col.tags.knockbacktype))
+                        error('invalid knockback type ' .. tostring(source.tags.knockbacktype))
                     end
-                    --self.delta_pos = self.delta_pos + knockback:norm() * col.tags.knockback * (1 - self.resistance.knockback[1]) - self.resistance.knockback[2]
+                    --self.delta_pos = self.delta_pos + knockback:norm() * source.tags.knockback * (1.0 - self.resistance.knockback[1]) - self.resistance.knockback[2]
                     self.knockback_delta =
-                        knockback:norm() * col.tags.knockback * (1 - self.resistance.knockback[1]) - self.resistance.knockback[2]
+                        knockback:norm() * source.tags.knockback * (1 - self.resistance.knockback[1]) - self.resistance.knockback[2]
                 end
                     --self.pos = self.pos + Vector:new{10, 10}
             end
@@ -454,8 +590,8 @@ impl Mob {
 
             local final_damage = damage
             --[[ TODO: make better weakness and resistance system
-            if self.weakness and type(col) == 'table' then
-                final_damage = self.weakness(col.mob, final_damage)
+            if self.weakness and type(source) == 'table' then
+                final_damage = self.weakness(source.mob, final_damage)
             end
             ]]
             final_damage = math.ceil(final_damage * resistance)

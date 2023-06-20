@@ -2,6 +2,8 @@
 mod constants;
 mod oam;
 
+pub use oam::*;
+
 pub use constants::*;
 
 pub struct Vfc {
@@ -15,41 +17,6 @@ pub struct Vfc {
     pub background_color: PaletteIndex,
     pub tileset: Tileset,
     pub bg_layers: [BgLayer; NUM_BG_LAYERS],
-}
-
-#[repr(transparent)]
-pub struct OamTable(pub [OamEntry; NUM_OAM_ENTRIES]);
-
-#[derive(Debug, Clone)]
-pub struct OamEntry {
-    pub x: u8,
-    pub y: u8,
-    pub tile_index: TileIndex,
-
-    // offset into the palette to find the colors for this object
-    // TODO: it should be multiplied by 8 to get the actual offset
-    //~ pub palette_offset: PaletteIndex,
-    //~ pub rotation: Rotation,
-    //~ pub priority: u8,
-    pub attributes: TileAttributes,
-}
-
-#[repr(transparent)]
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub struct OamIndex(pub u8);
-
-impl std::ops::Index<OamIndex> for OamTable {
-    type Output = OamEntry;
-
-    fn index(&self, index: OamIndex) -> &Self::Output {
-        &self.0[index.0 as usize]
-    }
-}
-
-impl std::ops::IndexMut<OamIndex> for OamTable {
-    fn index_mut(&mut self, index: OamIndex) -> &mut Self::Output {
-        &mut self.0[index.0 as usize]
-    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -216,15 +183,15 @@ impl TileAttributes {
         (self.0 >> 3) & 0b111
     }
 
-    pub fn get_flip_diagonal(&self) -> bool {
+    pub fn get_flip_x(&self) -> bool {
         (self.0 >> 3) & 1 != 0
     }
 
-    pub fn get_flip_x(&self) -> bool {
+    pub fn get_flip_y(&self) -> bool {
         (self.0 >> 4) & 1 != 0
     }
 
-    pub fn get_flip_y(&self) -> bool {
+    pub fn get_flip_diagonal(&self) -> bool {
         (self.0 >> 5) & 1 != 0
     }
 
@@ -239,12 +206,12 @@ impl TileAttributes {
 
     pub fn set_rotation(&mut self, rotation: u8) {
         self.0 &= 0b11_000_111;
-        self.0 |= rotation & 0b111 << 3;
+        self.0 |= (rotation & 0b111) << 3;
     }
 
     pub fn set_priority(&mut self, priority: u8) {
         self.0 &= 0b00_111_111;
-        self.0 |= priority & 0b11 << 6;
+        self.0 |= (priority & 0b11) << 6;
     }
 }
 
@@ -288,67 +255,6 @@ impl Tile<'_> {
 
         PaletteIndex(pixel as u8)
     }
-}
-
-impl OamEntry {
-    pub fn new(x: u8, y: u8, tile_index: TileIndex, attributes: TileAttributes) -> Self {
-        Self {
-            x,
-            y,
-            tile_index,
-            attributes,
-        }
-    }
-
-    pub fn bounding_box_contains_pixel(&self, x: u8, y: u8) -> bool {
-        let left = self.x;
-        let right = self.x.wrapping_add(TILE_WIDTH as u8);
-        let top = self.y;
-        let bottom = self.y.wrapping_add(TILE_HEIGHT as u8);
-
-        let horizontal = if left <= right {
-            x >= left && x < right
-        } else {
-            x >= left || x < right
-        };
-
-        let vertical = if top <= bottom {
-            y >= top && y < bottom
-        } else {
-            y >= top || y < bottom
-        };
-
-        horizontal && vertical
-    }
-
-    /*
-    pub fn poke_pixel()
-        // FIXME: support non-8x8 tiles
-
-        for plane in tile {
-            for byte in plane {
-                for i in 0..8 {
-                    let bit = byte >> i) & 0b0000_0001;
-
-                }
-            }
-        }
-    }
-
-    fn get_pixel(&self, tileset: &Tileset, pixel_x: u8, pixel_y: u8) -> PaletteIndex {
-        let tile = tileset.get_tile(self.tile_index);
-
-        tile.get_pixel(pixel_x, pixel_y)
-    }
-
-    // get a pixel in screen coords
-    fn get_pixel_global(&self, tileset: &Tileset, screen_x: u8, screen_y: u8) -> PaletteIndex {
-        let local_x = screen_x.wrapping_sub(self.x);
-        let local_y = screen_y.wrapping_sub(self.y);
-
-        self.get_pixel(tileset, local_x, local_y)
-    }
-    */
 }
 
 impl Tileset {
@@ -588,7 +494,13 @@ impl Vfc {
 
         for object_index in 0..NUM_OAM_ENTRIES {
             let object = &self.oam[OamIndex(object_index as u8)];
-            if scanline >= object.y && scanline < object.y.wrapping_add(TILE_HEIGHT as u8) {
+
+            let bottom = object.y.wrapping_add(TILE_HEIGHT as u8);
+
+            if scanline >= object.y && scanline < bottom {
+                //~ if (scanline >= object.y && scanline < bottom)
+                //~ || (object.y > bottom && (scanline > bottom || scanline <= object.y))
+                //~ {
                 sorted_objects.push(OamIndex(object_index as u8));
             }
         }
@@ -603,7 +515,12 @@ impl Vfc {
 
                 // TODO: this doesn't account for negative x values
                 // but it is necessary due to how get_tile_pixel_global works
-                if pixel_x < oam_entry.x || pixel_x >= oam_entry.x + TILE_WIDTH as u8 {
+                let right = oam_entry.x.wrapping_add(TILE_WIDTH as u8);
+
+                if (pixel_x < oam_entry.x) || (pixel_x >= right) {
+                    //~ if !((pixel_x >= oam_entry.x && pixel_x < right)
+                    //~ || (oam_entry.x > right && (pixel_x > right || pixel_x <= oam_entry.x)))
+                    //~ {
                     continue;
                 }
 
@@ -685,8 +602,8 @@ impl Vfc {
 
     // NOTE: does not work with tiles wider than 8 pixels
     fn get_tile_pixel(&self, tile_index: TileIndex, pixel_x: u8, pixel_y: u8) -> RawPixel {
-        let pixel_x = pixel_x % TILE_WIDTH as u8;
-        let pixel_y = pixel_y % TILE_HEIGHT as u8;
+        //~ let pixel_x = pixel_x % TILE_WIDTH as u8;
+        //~ let pixel_y = pixel_y % TILE_HEIGHT as u8;
 
         let pixel = (0..NUM_PLANES).fold(0, |acc, plane_index| {
             (acc << 1)
@@ -700,7 +617,13 @@ impl Vfc {
     }
 
     // NOTE: does not work with tiles wider than 8 pixels
-    fn get_tile_pixel_rotated(&self, tile_index: TileIndex, attributes: &TileAttributes, pixel_x: u8, pixel_y: u8) -> RawPixel {
+    fn get_tile_pixel_rotated(
+        &self,
+        tile_index: TileIndex,
+        attributes: &TileAttributes,
+        pixel_x: u8,
+        pixel_y: u8,
+    ) -> RawPixel {
         let pixel_x = pixel_x % TILE_WIDTH as u8;
         let pixel_y = pixel_y % TILE_HEIGHT as u8;
 
@@ -751,12 +674,6 @@ impl Default for Palette {
     }
 }
 
-impl Default for OamTable {
-    fn default() -> Self {
-        Self([(); NUM_OAM_ENTRIES].map(|_| OamEntry::default()))
-    }
-}
-
 impl Default for BgLayer {
     fn default() -> Self {
         Self {
@@ -779,17 +696,6 @@ impl Default for Vfc {
             background_color: PaletteIndex::default(),
             tileset: Tileset::new(),
             bg_layers: Default::default(),
-        }
-    }
-}
-
-impl Default for OamEntry {
-    fn default() -> Self {
-        Self {
-            x: 0,
-            y: SCREEN_HEIGHT as u8,
-            tile_index: TileIndex(0),
-            attributes: TileAttributes::oam_default(),
         }
     }
 }

@@ -10,7 +10,13 @@ pub fn poke_bg(bg: usize, fc: &mut Vfc, x: usize, y: usize, tile_index: TileInde
     fc.bg_layers[bg].tiles[i] = tile_index;
 }
 
-pub fn peek_bg(bg: usize, fc: &mut Vfc, x: usize, y: usize) -> TileIndex {
+pub fn poke_bg_rotation(bg: usize, fc: &mut Vfc, x: usize, y: usize, rotation: u8) {
+    let i = get_index_from_coords(x, y);
+
+    fc.bg_layers[bg].attributes[i].set_rotation(rotation);
+}
+
+pub fn peek_bg(bg: usize, fc: &Vfc, x: usize, y: usize) -> TileIndex {
     let i = get_index_from_coords(x, y);
 
     fc.bg_layers[bg].tiles[i]
@@ -24,6 +30,14 @@ pub fn poke_bg_palette(bg: usize, fc: &mut Vfc, x: usize, y: usize, palette_inde
 
 pub fn poke_main_bg(fc: &mut vfc::Vfc, x: usize, y: usize, tile_index: TileIndex) {
     poke_bg(0, fc, x, y, tile_index)
+}
+
+pub fn poke_main_rotation(fc: &mut vfc::Vfc, x: usize, y: usize, rotation: u8) {
+    poke_bg_rotation(0, fc, x, y, rotation)
+}
+
+pub fn peek_main_bg(fc: &vfc::Vfc, x: usize, y: usize) -> TileIndex {
+    peek_bg(0, fc, x, y)
 }
 
 pub fn peek_game_layer(fc: &vfc::Vfc, x: usize, y: usize) -> TileIndex {
@@ -41,6 +55,22 @@ pub fn draw_text(bg: usize, fc: &mut Vfc, x: usize, y: usize, string: &str) {
             poke_bg_palette(bg, fc, x + xi, y, Subpalette::new(0));
         } else {
             panic!();
+        }
+    }
+}
+
+pub fn paint_rect_palette(
+    bg: usize,
+    fc: &mut Vfc,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    palette: Subpalette,
+) {
+    for yi in y..(y.wrapping_add(h)) {
+        for xi in x..(x.wrapping_add(w)) {
+            poke_bg_palette(bg, fc, xi, yi, palette);
         }
     }
 }
@@ -73,5 +103,12 @@ pub fn clear_line(bg: usize, fc: &mut Vfc, line: usize) {
     for xi in 0..BG_WIDTH {
         poke_bg(bg, fc, xi, line, TileIndex(0x0));
         //~ poke_bg_palette(bg, fc, xi, line, Subpalette::new(1));
+    }
+}
+
+pub fn clear_sprites(fc: &mut Vfc) {
+    let range = 0..=255;
+    for i in range {
+        fc.oam.0[i].hide();
     }
 }

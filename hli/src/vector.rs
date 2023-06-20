@@ -28,14 +28,14 @@ impl<T> Vectorable for T where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vector<const N: usize, T>(pub [T; N])
+pub struct Vector<T, const N: usize>(pub [T; N])
 where
     T: Vectorable;
 
 //~ #[derive(Debug, Clone, Copy, PartialEq)]
 //~ pub struct Vector<const N: usize>(pub [f64; N]);
 
-impl<T: Vectorable> Vector<2, T> {
+impl<T: Vectorable> Vector<T, 2> {
     pub fn x(&self) -> T {
         self.0[0]
     }
@@ -56,7 +56,7 @@ impl<T: Vectorable> Vector<2, T> {
     }
 }
 
-impl Vector<2, f64> {
+impl Vector<f64, 2> {
     pub fn rotate_by_angle(&self, angle: f64) -> Self {
         let cos_a = angle.cos();
         let sin_a = angle.sin();
@@ -66,7 +66,7 @@ impl Vector<2, f64> {
     }
 }
 
-impl Vector<3, f64> {
+impl Vector<f64, 3> {
     pub fn x(&self) -> f64 {
         self.0[0]
     }
@@ -85,14 +85,14 @@ impl Vector<3, f64> {
     }
 }
 
-impl<const N: usize> Default for Vector<N, f64> {
+impl<const N: usize> Default for Vector<f64, N> {
     fn default() -> Self {
         Vector::zero()
     }
 }
 
-impl<const N: usize> Vector<N, f64> {
-    pub fn zero() -> Self {
+impl<const N: usize> Vector<f64, N> {
+    pub const fn zero() -> Self {
         Vector([0.0; N])
     }
 
@@ -117,6 +117,8 @@ impl<const N: usize> Vector<N, f64> {
         *other * n
     }
 
+    /// note this function does not return a reasonable answer for (0, 0)
+    /// indeed, it will panic for integers, but return an *infinitely long* vector for floats
     pub fn norm(&self) -> Self {
         *self / self.mag()
     }
@@ -130,7 +132,7 @@ impl<const N: usize> Vector<N, f64> {
 
 // Vector unary op(s)
 
-impl<const N: usize, T: Vectorable> Neg for Vector<N, T> {
+impl<const N: usize, T: Vectorable> Neg for Vector<T, N> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -142,7 +144,7 @@ impl<const N: usize, T: Vectorable> Neg for Vector<N, T> {
 
 // Vector-Vector binary op(s)
 
-impl<const N: usize, T: Vectorable> Add for Vector<N, T> {
+impl<const N: usize, T: Vectorable> Add for Vector<T, N> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
@@ -152,7 +154,7 @@ impl<const N: usize, T: Vectorable> Add for Vector<N, T> {
     }
 }
 
-impl<const N: usize, T: Vectorable> Sub for Vector<N, T> {
+impl<const N: usize, T: Vectorable> Sub for Vector<T, N> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
@@ -162,9 +164,19 @@ impl<const N: usize, T: Vectorable> Sub for Vector<N, T> {
     }
 }
 
+impl<const N: usize, T: Vectorable> Mul for Vector<T, N> {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self::Output {
+        let a = self.0.iter().zip(other.0.iter()).map(|(&a, &b)| a * b);
+
+        a.collect::<Self>()
+    }
+}
+
 // Vector-float binary op(s)
 
-impl<const N: usize, T: Vectorable> Mul<T> for Vector<N, T> {
+impl<const N: usize, T: Vectorable> Mul<T> for Vector<T, N> {
     type Output = Self;
 
     fn mul(self, other: T) -> Self::Output {
@@ -174,7 +186,7 @@ impl<const N: usize, T: Vectorable> Mul<T> for Vector<N, T> {
     }
 }
 
-impl<const N: usize, T: Vectorable> Div<T> for Vector<N, T> {
+impl<const N: usize, T: Vectorable> Div<T> for Vector<T, N> {
     type Output = Self;
 
     fn div(self, other: T) -> Self::Output {
@@ -186,7 +198,7 @@ impl<const N: usize, T: Vectorable> Div<T> for Vector<N, T> {
 
 // misc
 
-impl<const N: usize, T: Vectorable + Display> Display for Vector<N, T> {
+impl<const N: usize, T: Vectorable + Display> Display for Vector<T, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "Vector(")?;
 
@@ -200,9 +212,9 @@ impl<const N: usize, T: Vectorable + Display> Display for Vector<N, T> {
     }
 }
 
-impl<const N: usize, T: Vectorable> FromIterator<T> for Vector<N, T> {
+impl<const N: usize, T: Vectorable> FromIterator<T> for Vector<T, N> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        Vector::<N, T>(
+        Vector::<T, N>(
             iter.into_iter()
                 .collect::<Vec<_>>()
                 .try_into()
@@ -211,7 +223,7 @@ impl<const N: usize, T: Vectorable> FromIterator<T> for Vector<N, T> {
     }
 }
 
-impl<const N: usize, T: Vectorable> IntoIterator for Vector<N, T> {
+impl<const N: usize, T: Vectorable> IntoIterator for Vector<T, N> {
     type Item = T;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 

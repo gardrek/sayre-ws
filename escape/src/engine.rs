@@ -1,21 +1,35 @@
-use std::collections::HashMap;
 
-use hli::file;
+use std::collections::HashMap;
+use std::collections::HashSet;
+
 use hli::vfc;
 use hli::vfc::Vfc;
+use hli::fc;
+use hli::file;
+use hli::random;
+use hli::vector;
 
 mod game;
 use game::Game;
 
-mod plat;
-
 use file::load_tileset_from_path;
+
+use vector::Vector;
+
+use random::shuffle;
 
 const GAME_NAME: &'static str = "Escape from Castle Dracula";
 
 fn render_to_argb_u32(framebuffer: &[vfc::Rgb; vfc::NUM_SCREEN_PIXELS], target_buffer: &mut [u32]) {
     for (index, argb) in framebuffer.iter().map(|rgb| rgb.as_argb_u32()).enumerate() {
         target_buffer[index] = argb;
+    }
+}
+
+fn clear_sprites(fc: &mut Vfc) {
+    let range = 0..=63;
+    for i in range {
+        fc.oam.0[i].y = vfc::SCREEN_HEIGHT as u8;
     }
 }
 
@@ -26,7 +40,6 @@ pub enum Action {
     Up,
     Down,
     Fire,
-    Jump,
 }
 
 impl Input {
@@ -42,7 +55,6 @@ impl Input {
 pub struct EngineState {
     pub fc: Vfc,
     pub input: Input,
-    pub frames: usize,
 }
 
 #[derive(Default)]
@@ -52,21 +64,11 @@ pub struct Input {
     held: HashMap<Action, bool>,
 }
 
-pub fn new_vfc() -> Vfc {
-    use vfc::*;
 
+pub fn new_vfc() -> Vfc {
     let mut fc = Vfc::default();
 
     let preview_palette_array = [
-        Rgb::new(0x00, 0x00, 0x00), // Full Black (background)
-        Rgb::new(0x55, 0x66, 0x66), // Dull Teal
-        Rgb::new(0x55, 0x66, 0x66), // Dull Teal
-        Rgb::new(0x55, 0x66, 0x66), // Dull Teal
-        Rgb::new(0x55, 0x66, 0x66), // Dull Teal
-        Rgb::new(0xa0, 0xa0, 0xa0), // gar437 Dull White
-        Rgb::new(0x55, 0x66, 0x66), // Dull Teal
-        Rgb::new(0x55, 0x66, 0x66), // Dull Teal
-        ////
         Rgb::new(0x00, 0x11, 0x11), // Black (background)
         Rgb::new(0x00, 0x11, 0x11), // Black
         Rgb::new(0xcc, 0x44, 0x33), // Red
@@ -75,6 +77,7 @@ pub fn new_vfc() -> Vfc {
         Rgb::new(0x99, 0x00, 0x99), // [placeholder]
         Rgb::new(0x99, 0x00, 0x99), // [placeholder]
         Rgb::new(0xbb, 0xbb, 0x88), // Tan
+
         Rgb::new(0x99, 0x00, 0x99), // [placeholder] (transparent)
         Rgb::new(0x00, 0x11, 0x11), // Black
         Rgb::new(0xdd, 0x99, 0x44), // Orange
@@ -83,9 +86,8 @@ pub fn new_vfc() -> Vfc {
         Rgb::new(0x99, 0x00, 0x99), // [placeholder]
         Rgb::new(0x99, 0x00, 0x99), // [placeholder]
         Rgb::new(0xbb, 0xbb, 0x88), // Tan
-        //
-        //
-        //
+
+        /*
         // main palette in order of approximate brightness/lightness/idk luma or something
         Rgb::new(0x00, 0x11, 0x11), // Black
         Rgb::new(0x44, 0x44, 0x88), // Navy
@@ -103,6 +105,7 @@ pub fn new_vfc() -> Vfc {
         Rgb::new(0xbb, 0xdd, 0xcc), // Cyan
         Rgb::new(0xee, 0xee, 0x77), // Yellow
         Rgb::new(0xee, 0xee, 0xdd), // White
+        */
     ];
 
     fc.palette = Palette::new(
@@ -119,7 +122,7 @@ pub fn new_vfc() -> Vfc {
             .unwrap_or_else(|_| unreachable!()),
     );
 
-    fc.tileset = load_tileset_from_path("escape_tiles.png").unwrap();
+    fc.tileset = load_tileset_from_path("hunt/hunt_tiles.png").unwrap();
 
     fc
 }
@@ -129,6 +132,8 @@ pub fn new_vfc() -> Vfc {
 fn main() {
     use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
     use vfc::*;
+
+    let mut fc = new_vfc();
 
     //// minifb Setup ////////////
 
@@ -163,6 +168,8 @@ fn main() {
         frametime_hist.push_back(0);
     }
 
+    let mut frames = 0;
+
     let mut average_fps;
 
     //----\\ INPUT //----\\
@@ -173,29 +180,22 @@ fn main() {
     key_binds.insert(Key::Right, Action::Right);
     key_binds.insert(Key::Up, Action::Up);
     key_binds.insert(Key::Down, Action::Down);
-    key_binds.insert(Key::Z, Action::Fire);
-    key_binds.insert(Key::X, Action::Jump);
+    key_binds.insert(Key::Space, Action::Fire);
 
     key_binds.insert(Key::A, Action::Left);
     key_binds.insert(Key::D, Action::Right);
     key_binds.insert(Key::W, Action::Up);
     key_binds.insert(Key::S, Action::Down);
-    //~ key_binds.insert(Key::Enter, Action::Fire);
-    //~ key_binds.insert(Key::Space, Action::Jump);
+    key_binds.insert(Key::Enter, Action::Fire);
 
-    let pressed = HashMap::new();
-    let held = HashMap::new();
+    let mut pressed = HashMap::new();
+    let mut held = HashMap::new();
 
     //----\\ INITIAL GAME STATE //----\\
 
     let mut engine_state = EngineState {
-        fc: new_vfc(),
-        input: Input {
-            key_binds,
-            pressed,
-            held,
-        },
-        frames: 0,
+        fc,
+        input: Input { key_binds, pressed, held },
     };
 
     let mut game = Game::new();
@@ -208,7 +208,7 @@ fn main() {
 
     let debug_allowed = true;
     let mut debug_mode = false;
-    let mut debug_output = false;
+    let debug_output = false;
 
     'main: while window.is_open() && !window.is_key_down(Key::Backspace) {
         //----\\ SOME TIMING //----\\
@@ -235,10 +235,6 @@ fn main() {
         }
 
         if debug_mode {
-            if window.is_key_pressed(Key::F6, KeyRepeat::No) {
-                debug_output = !debug_output;
-            }
-
             if window.is_key_pressed(Key::F8, KeyRepeat::No) {
                 //~ std::mem::swap(&mut fc.oam, &mut hidden_oam);
                 engine_state.fc.oam_hidden = !engine_state.fc.oam_hidden;
@@ -258,7 +254,7 @@ fn main() {
         // reset
         {
             use Action::*;
-            let list = [Left, Right, Up, Down, Fire, Jump];
+            let list = [Left, Right, Up, Down, Fire];
 
             for action in list {
                 engine_state.input.pressed.insert(action, false);
@@ -271,10 +267,7 @@ fn main() {
 
             // this may seem complicated but it's how we let two keys do the same action
             if let Some(already_pressed) = engine_state.input.pressed.get(action) {
-                engine_state
-                    .input
-                    .pressed
-                    .insert(*action, pressed || *already_pressed);
+                engine_state.input.pressed.insert(*action, pressed || *already_pressed);
                 //~ ()
             } else {
                 panic!("action not inserted {:?}", action)
@@ -283,10 +276,7 @@ fn main() {
             let down = window.is_key_down(*key);
 
             if let Some(already_down) = engine_state.input.held.get(action) {
-                engine_state
-                    .input
-                    .held
-                    .insert(*action, down || *already_down);
+                engine_state.input.held.insert(*action, down || *already_down);
                 //~ ()
             } else {
                 panic!("action not inserted {:?}", action)
@@ -333,11 +323,10 @@ fn main() {
 
         if debug_output {
             eprintln!(
-                "{instant_microsecs_per_frame:?}\t{average_frametime:?}\t{average_fps}\t{}",
-                engine_state.frames
+                "{instant_microsecs_per_frame:?}\t{average_frametime:?}\t{average_fps}\t{frames}"
             );
         }
 
-        engine_state.frames += 1;
+        frames += 1;
     }
 }

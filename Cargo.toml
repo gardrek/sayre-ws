@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2" # Important! wgpu/Bevy needs this!
 
 members = [
     "vfc",
@@ -8,6 +9,7 @@ members = [
     "hunt",
     "hli",
     "escape",
+    "web-game",
 ]
 
 [profile.dev]
