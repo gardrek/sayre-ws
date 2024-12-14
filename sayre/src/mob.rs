@@ -11,15 +11,13 @@ use super::mob_drop::MobDrop;
 //~ use super::snd::SoundClip;
 use super::vector::Vector;
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Team {
-    #[default]
     Player,
     Enemy,
 }
 
-/*-- whether this mob is controlled by a player
--- 0 is AI, anything else is that player's number*/
+// whether this mob is controlled by an AI, a Player, or doesn't need controlling
 #[derive(Default, Clone)]
 pub enum Controller {
     #[default]
@@ -130,6 +128,9 @@ pub struct Animation;
 // TODO: break this up into different components
 #[derive(Default, Clone)]
 pub struct Mob {
+    // we'll use this ID instead of passing pointers around
+    id: MobId,
+
     // probably required to actually a mob
     state: MobState,
     pos: Vector<f64, 2>,
@@ -142,7 +143,7 @@ pub struct Mob {
     name: String,
 
     // team
-    team: Team,
+    team: Option<Team>,
 
     // controllable
     input: InputState,

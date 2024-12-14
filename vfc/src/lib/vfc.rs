@@ -155,7 +155,6 @@ pub struct Tile<'a> {
     pub tile: [&'a [u8; BYTES_PER_TILE_PLANE]; NUM_PLANES],
 }
 
-// TODO: implement per-tile rotation
 #[derive(Debug)]
 pub struct BgLayer {
     pub x: u8,
@@ -165,7 +164,7 @@ pub struct BgLayer {
     pub hidden: bool,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct TileAttributes(u8);
 
 impl TileAttributes {
@@ -174,6 +173,25 @@ impl TileAttributes {
         s.set_priority(1);
         s
     }
+
+    // build
+
+    pub fn with_palette(mut self, subpalette: Subpalette) -> TileAttributes {
+        self.set_palette(subpalette);
+        self
+    }
+
+    pub fn with_rotation(mut self, rotation: u8) -> TileAttributes {
+        self.set_rotation(rotation);
+        self
+    }
+
+    pub fn with_priority(mut self, priority: u8) -> TileAttributes {
+        self.set_priority(priority);
+        self
+    }
+
+    // read
 
     pub fn get_palette(&self) -> Subpalette {
         Subpalette::new(self.0 & 0b111)
@@ -198,6 +216,8 @@ impl TileAttributes {
     pub fn get_priority(&self) -> u8 {
         (self.0 >> 6) & 0b11
     }
+
+    // write
 
     pub fn set_palette(&mut self, subpalette: Subpalette) {
         self.0 &= 0b11_111_000;
@@ -403,8 +423,9 @@ impl Vfc {
         let mut hit_priority = 0;
         let mut hit_pixel = None;
 
-        for (priority, layer) in self.bg_layers.iter().enumerate() {
-            //~ let priority = priority + 1;
+        for (layer_index, layer) in self.bg_layers.iter().enumerate() {
+            //~ let priority = layer_index + 1;
+            let priority = layer_index;
 
             if layer.hidden {
                 continue;
@@ -436,7 +457,7 @@ impl Vfc {
 
             if pixel != RawPixel(0) {
                 if priority >= hit_priority {
-                    hit_layer_index = Some(priority as u8);
+                    hit_layer_index = Some(layer_index as u8);
                     hit_priority = priority;
                     hit_pixel = Some(colorized_pixel);
                     //~ hit_pixel = Some(pixel);
@@ -497,10 +518,10 @@ impl Vfc {
 
             let bottom = object.y.wrapping_add(TILE_HEIGHT as u8);
 
-            if scanline >= object.y && scanline < bottom {
-                //~ if (scanline >= object.y && scanline < bottom)
-                //~ || (object.y > bottom && (scanline > bottom || scanline <= object.y))
-                //~ {
+            //~ if scanline >= object.y && scanline < bottom {
+            if (scanline >= object.y || object.y > 0u8.wrapping_sub(TILE_HEIGHT as u8))
+                && scanline < bottom
+            {
                 sorted_objects.push(OamIndex(object_index as u8));
             }
         }
@@ -510,19 +531,21 @@ impl Vfc {
 
     fn get_top_pixel(&self, object_list: &[OamIndex], pixel_x: u8, pixel_y: u8) -> LayerHit {
         let oam_hit = 'l: {
+            if self.oam_hidden {
+                break 'l None;
+            }
+
             for index in object_list.iter() {
                 let oam_entry = &self.oam[*index];
 
-                // TODO: this doesn't account for negative x values
-                // but it is necessary due to how get_tile_pixel_global works
+                // TODO: we could have an early out here but the math below doesn't work for sprites off the top or left edge
+                /*
                 let right = oam_entry.x.wrapping_add(TILE_WIDTH as u8);
 
                 if (pixel_x < oam_entry.x) || (pixel_x >= right) {
-                    //~ if !((pixel_x >= oam_entry.x && pixel_x < right)
-                    //~ || (oam_entry.x > right && (pixel_x > right || pixel_x <= oam_entry.x)))
-                    //~ {
                     continue;
                 }
+                */
 
                 let pixel = self.get_tile_pixel_global(*index, pixel_x, pixel_y);
 
@@ -553,10 +576,7 @@ impl Vfc {
 
         let hit = 'l: {
             for priority in (0..(NUM_OBJECT_PRIORITY_LEVELS as u8)).rev() {
-                if self.oam_hidden {
-                    break 'l None;
-                }
-
+            //~ for priority in 0..(NUM_OBJECT_PRIORITY_LEVELS as u8) {
                 let oam_priority = oam_hit.as_ref().map(|hit| hit.priority);
                 let bg_priority = bg_hit.as_ref().map(|hit| hit.priority);
                 match (oam_priority, bg_priority) {
@@ -600,7 +620,7 @@ impl Vfc {
         self.get_tile_pixel_rotated(tile_index, &oam_entry.attributes, local_x, local_y)
     }
 
-    // NOTE: does not work with tiles wider than 8 pixels
+    // NOTE: not tested with tiles wider than 8 pixels
     fn get_tile_pixel(&self, tile_index: TileIndex, pixel_x: u8, pixel_y: u8) -> RawPixel {
         //~ let pixel_x = pixel_x % TILE_WIDTH as u8;
         //~ let pixel_y = pixel_y % TILE_HEIGHT as u8;
@@ -616,7 +636,7 @@ impl Vfc {
         RawPixel(pixel as u8)
     }
 
-    // NOTE: does not work with tiles wider than 8 pixels
+    // NOTE: not tested with tiles wider than 8 pixels
     fn get_tile_pixel_rotated(
         &self,
         tile_index: TileIndex,
@@ -624,8 +644,11 @@ impl Vfc {
         pixel_x: u8,
         pixel_y: u8,
     ) -> RawPixel {
-        let pixel_x = pixel_x % TILE_WIDTH as u8;
-        let pixel_y = pixel_y % TILE_HEIGHT as u8;
+        if pixel_x != pixel_x % TILE_WIDTH as u8 || pixel_y != pixel_y % TILE_HEIGHT as u8 {
+            return RawPixel(0);
+        }
+        //~ let pixel_x = pixel_x % TILE_WIDTH as u8;
+        //~ let pixel_y = pixel_y % TILE_HEIGHT as u8;
 
         let rotation = attributes.get_rotation();
 
@@ -645,7 +668,7 @@ impl Vfc {
         };
 
         let pixel_y = if flip_y {
-            TILE_WIDTH - 1 - pixel_y
+            TILE_HEIGHT - 1 - pixel_y
         } else {
             pixel_y
         };

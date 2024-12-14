@@ -20,10 +20,12 @@ pub const TILE_EMPTY: TileIndex = TileIndex(0x00);
 pub const TILE_CEILING: TileIndex = TileIndex(0x01);
 pub const TILE_WALL: TileIndex = TileIndex(0x7f);
 pub const TILE_BLOCK: TileIndex = TileIndex(0x80);
-pub const TILE_SHADOW_OFFSET: TileIndex = TileIndex(0x84); // (0x80 + 0x84) % 0x100 == 4
+pub const TILE_SHADOW_OFFSET: TileIndex = TileIndex(0x04);
 pub const TILE_PIECE_ICON: TileIndex = TileIndex(0x08);
 pub const TILE_ROW_CLEAR: TileIndex = TileIndex(0x18);
 pub const TILE_GAME_OVER_BLOCK: TileIndex = TileIndex(0x20);
+
+pub const TILE_BLOCKS: [u8; 8] = [0x80, 0x84, 0x88, 0x8c, 0xc4, 0xc4, 0xc8, 0xc8, ];
 
 pub fn poke_bg(bg: usize, fc: &mut vfc::Vfc, x: usize, y: usize, tile_index: TileIndex) {
     fc.bg_layers[bg].tiles[(y % vfc::BG_HEIGHT) * vfc::BG_WIDTH + x % vfc::BG_WIDTH] = tile_index

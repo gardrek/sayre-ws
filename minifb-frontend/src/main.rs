@@ -1,6 +1,5 @@
 use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
 
-use sayre::vfc::Rgb;
 use sayre::vfc::SCREEN_HEIGHT as HEIGHT;
 use sayre::vfc::SCREEN_WIDTH as WIDTH;
 
@@ -22,10 +21,8 @@ fn main() {
         panic!("{}", e);
     });
 
-    let rgb_yel = Rgb::new(0xcc, 0xaa, 0x22);
-
-    //~ let yellow = 0xcc * 0x10000 + 0xaa * 0x100 + 0x22;
-    let yellow = rgb_yel.as_argb_u32();
+    //~ let rgb_yel = sayre::vfc::Rgb::new(0xcc, 0xaa, 0x22);
+    //~ let yellow = rgb_yel.as_argb_u32();
 
     // Limit to max ~60 fps update rate
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
@@ -39,11 +36,9 @@ fn main() {
 
     //~ panic!();
 
-    let mut hidden_oam = sayre::vfc::OamTable::default();
+    //~ let mut old_pixel = yellow;
 
-    let mut old_pixel = yellow;
-
-    let mut start_time;
+    //~ let mut start_time;
 
     let mut frametime_hist = std::collections::VecDeque::from(vec![]);
 
@@ -53,11 +48,14 @@ fn main() {
 
     let mut frames = 0;
 
+    let mut test_x: u8 = 80;
+    let mut test_y: u8 = 40;
+
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        start_time = std::time::Instant::now();
+        //~ start_time = std::time::Instant::now();
 
         if window.is_key_pressed(Key::F8, KeyRepeat::No) {
-            std::mem::swap(&mut vfc.oam, &mut hidden_oam);
+            vfc.oam_hidden = !vfc.oam_hidden;
         }
 
         if window.is_key_pressed(Key::F9, KeyRepeat::No) {
@@ -68,19 +66,35 @@ fn main() {
             vfc.bg_layers[1].hidden = !vfc.bg_layers[1].hidden;
         }
 
+        if window.is_key_pressed(Key::Left, KeyRepeat::No) {
+            test_x = test_x.wrapping_add(0xff);
+        }
+
+        if window.is_key_pressed(Key::Right, KeyRepeat::No) {
+            test_x = test_x.wrapping_add(1);
+        }
+
+        if window.is_key_pressed(Key::Up, KeyRepeat::No) {
+            test_y = test_y.wrapping_add(0xff);
+        }
+
+        if window.is_key_pressed(Key::Down, KeyRepeat::No) {
+            test_y = test_y.wrapping_add(1);
+        }
+
         //~ let n = 16.0;
         //~ let dx = ((frames as f32 / 100.0).sin() * 16.0) as u8;
         //~ let dy = ((frames as f32 / 100.0).cos() * 16.0) as u8;
         let n = 10.0 * std::f32::consts::PI;
         let dx = (((frames % 100) as f32 / n).sin() * n) as i8 as u8;
         //~ let dy = (((frames / 100) as f32).cos() * n) as u8;
-        let dy = 0;
+        //~ let dy = 0;
 
         //~ vfc.bg_layers[1].x = vfc.bg_layers[1].x.wrapping_add(dx);
         //~ vfc.bg_layers[1].y = vfc.bg_layers[1].y.wrapping_add(dy);
 
         vfc.bg_layers[0].y = dx;
-        vfc.bg_layers[1].y = dy;
+        vfc.bg_layers[1].x = dx;
 
         vfc.render_frame();
 
@@ -96,19 +110,37 @@ fn main() {
         }
 
         {
-            let layer = &mut vfc.bg_layers[0];
-            layer.x = layer.x.wrapping_add(1)
+            match window.get_mouse_pos(minifb::MouseMode::Discard) {
+                Some((x, y)) => {
+                    let mut list = sayre::sprite::test_list(x as u8, y as u8);
+                    list.render(8, &mut vfc.oam);
+                    //~ list.render_partial(4, start, 4, &mut vfc.oam);
+                    list.clear();
+                }
+                None => {},
+            }
+            let mut list = sayre::sprite::test_list(test_x, test_y);
+            list.render(4, &mut vfc.oam);
+            //~ list.render_partial(4, start, 4, &mut vfc.oam);
+            list.clear();
         }
 
         {
+            let layer = &mut vfc.bg_layers[0];
+            layer.x = layer.x.wrapping_add(1);
+        }
+
+        /*{
             let pixel = buffer.iter_mut().next().unwrap();
             *pixel = !(old_pixel) & 0xffffff;
             old_pixel = (*pixel).clone();
-        }
+        }*/
 
         // We unwrap here as we want this code to exit if it fails.
         // Real applications may want to handle this in a different way
         window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
+
+        /*
 
         let end_time = std::time::Instant::now();
 
@@ -127,8 +159,17 @@ fn main() {
         average_frametime /= 5;
 
         let average_fps = 1_000_000 / average_frametime;
+        */
 
-        eprintln!("{instant_microsecs_per_frame:?}\t{average_frametime:?}\t{average_fps}");
+        /*
+        for i in 0..8 {
+            let obj = &vfc.oam[sayre::vfc::OamIndex(i)];
+            eprint!("[{:02x} {:02x} {:02x}] ", obj.x, obj.y, obj.tile_index.0);
+        }
+        eprintln!();
+        */
+
+        //~ eprintln!("{instant_microsecs_per_frame:?}\t{average_frametime:?}\t{average_fps}");
         //~ eprintln!("{instant_fps:?}");
         //~ eprintln!("{instant_fps:?}\t {:?}");
 

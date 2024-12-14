@@ -7,52 +7,14 @@ use super::tet;
 const NUM_BASIC_PIECES_PLUS_ONE: usize = 8;
 const TET_H: usize = 2;
 const TET_W: usize = 4;
+pub const TILE_ROW_LENGTH: usize = 16;
 
-/*
 // (0) O I T J L S Z
 #[rustfmt::skip]
 const TETROMINOS_DATA: [[[u8; TET_W]; TET_H]; NUM_BASIC_PIECES_PLUS_ONE] = [
-    [
-        [ 0, 0, 0, 0, ],
-        [ 0, 1, 0, 0, ],
-    ],
-    [
-        [ 0, 0, 0, 0, ],
-        [ 0, 1, 0, 0, ],
-    ],
-    [
-        [ 0, 0, 0, 0, ],
-        [ 0, 1, 1, 0, ],
-    ],
-    [
-        [ 0, 0, 0, 0, ],
-        [ 1, 1, 1, 0, ],
-    ],
-    [
-        [ 0, 1, 0, 0, ],
-        [ 0, 1, 1, 0, ],
-    ],
     [
         [ 1, 0, 1, 0, ],
-        [ 1, 1, 1, 0, ],
-    ],
-    [
-        [ 0, 0, 1, 1, ],
-        [ 1, 1, 1, 0, ],
-    ],
-    [
-        [ 1, 1, 0, 0, ],
-        [ 0, 1, 1, 1, ],
-    ],
-];
-*/
-
-// (0) O I T J L S Z
-#[rustfmt::skip]
-const TETROMINOS_DATA: [[[u8; TET_W]; TET_H]; NUM_BASIC_PIECES_PLUS_ONE] = [
-    [
-        [ 0, 0, 0, 0, ],
-        [ 0, 1, 0, 0, ],
+        [ 0, 1, 0, 1, ],
     ],
     [
         [ 0, 1, 1, 0, ],
@@ -97,10 +59,17 @@ const fn make_tetrominos_from_data(
             while xi < TET_W {
                 let mino = data[piece][yi][xi];
                 out[piece][yi][xi] = if mino > 0 {
-                    //~ let tx = 0;
-                    //~ let ty = 0;
+                    let west = if xi == 0 { 0 } else { data[piece][yi][xi - 1] };
+                    let east = if xi == TET_W - 1 { 0 } else { data[piece][yi][xi + 1] };
+                    let north = if yi == 0 { 0 } else { data[piece][yi - 1][xi] };
+                    let south = if yi == TET_H - 1 { 0 } else { data[piece][yi + 1][xi] };
 
-                    TileIndex(tet::TILE_BLOCK.0)
+                    let west_east = if west > 0 && east > 0 { 2 } else if west > 0 { 3 } else if east > 0 { 1 } else { 0 };
+                    let north_south = if north > 0 && south > 0 { 2 } else if north > 0 { 3 } else if south > 0 { 1 } else { 0 };
+
+                    let base = tet::TILE_BLOCKS[piece];
+
+                    TileIndex(base + west_east + north_south * TILE_ROW_LENGTH as u8)
                 } else {
                     TileIndex(0)
                 };
@@ -268,7 +237,7 @@ impl Piece {
         x: usize,
         y: usize,
         mut sprite_index_offset: usize,
-        tile_offset: u8,
+        tile_offset: Option<u8>,
         palette_override: Option<Subpalette>,
     ) -> usize {
         for yi in 0..self.height() {
@@ -281,7 +250,13 @@ impl Piece {
                     sprite.x = (x + xi * 8) as u8;
                     sprite.y = (y + yi * 8) as u8;
 
-                    sprite.tile_index = TileIndex(tile_offset.wrapping_add(tet_tile.0));
+                    sprite.tile_index = match tile_offset {
+                        Some(tile_offset) => {
+                            let (_base, west_east, north_south) = combined_tile_to_base_and_connections(tet_tile);
+                            TileIndex(tile_offset.wrapping_add(west_east + north_south * TILE_ROW_LENGTH as u8))
+                        }
+                        None => tet_tile,
+                    };
 
                     let palette = match palette_override {
                         Some(subpalette) => subpalette,
@@ -291,7 +266,7 @@ impl Piece {
                     sprite.attributes = vfc::TileAttributes::default();
                     sprite.attributes.set_palette(palette);
 
-                    sprite.attributes.set_rotation(1);
+                    //~ sprite.attributes.set_rotation(1);
 
                     sprite_index_offset += 1;
 
@@ -304,7 +279,7 @@ impl Piece {
     }
 
     /// Centers the piece in the smallest square that fits it.
-    /// Does not currently support spieces with multiple disconnected parts.
+    /// Does not currently support pieces with multiple disconnected parts.
     pub fn shrink_wrap_square(&self) -> Piece {
         let mut first_data = vec![];
         let mut width = self.width();
@@ -461,12 +436,62 @@ impl Piece {
                     tile_y
                 };
 
-                data.push(self.data[tile_y * self.width + tile_x]);
+                data.push(flip_rotate_tile(self.data[tile_y * self.width + tile_x], flip_x, flip_y, flip_diagonal));
             }
         }
 
         Piece { data, ..*self }
     }
+}
+
+pub fn combined_tile_to_base_and_connections(tile: TileIndex) -> (u8, u8, u8) {
+    let u8_tile = tile.0;
+
+    if u8_tile == 0 { return (u8_tile, 0, 0) }
+
+    let west_east = u8_tile % (TILE_ROW_LENGTH as u8 / 4);
+
+    let north_south = u8_tile % (TILE_ROW_LENGTH as u8 * 4) / TILE_ROW_LENGTH as u8;
+
+    let base_column = u8_tile % (TILE_ROW_LENGTH as u8);
+
+    let base_row = u8_tile / (TILE_ROW_LENGTH as u8);
+
+    let base = (base_row / 4 * 4) << 4 | (base_column / 4 * 4);
+
+    (base, west_east, north_south)
+}
+
+fn flip_rotate_tile(tile: TileIndex, flip_x: bool, flip_y: bool, flip_diagonal: bool) -> TileIndex {
+    if tile.0 == 0 { return tile }
+
+    let (base, mut west_east, mut north_south) = combined_tile_to_base_and_connections(tile);
+
+    if flip_x {
+        west_east = match west_east {
+            0 => 0,
+            1 => 3,
+            2 => 2,
+            3 => 1,
+            _ => unreachable!(),
+        };
+    }
+
+    if flip_y {
+        north_south = match north_south {
+            0 => 0,
+            1 => 3,
+            2 => 2,
+            3 => 1,
+            _ => unreachable!(),
+        };
+    }
+
+    if flip_diagonal {
+        (west_east, north_south) = (north_south, west_east);
+    }
+
+    TileIndex(base + west_east + north_south * TILE_ROW_LENGTH as u8)
 }
 
 pub struct FloatingPiece {

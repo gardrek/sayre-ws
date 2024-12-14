@@ -9,12 +9,6 @@ pub struct OamEntry {
     pub x: u8,
     pub y: u8,
     pub tile_index: TileIndex,
-
-    // offset into the palette to find the colors for this object
-    // TODO: it should be multiplied by 8 to get the actual offset
-    //~ pub palette_offset: PaletteIndex,
-    //~ pub rotation: Rotation,
-    //~ pub priority: u8,
     pub attributes: TileAttributes,
 }
 

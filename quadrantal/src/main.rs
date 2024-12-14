@@ -37,9 +37,6 @@ enum Action {
     Start,
     Pause,
 
-    //not-yet-implemented
-    //~ Save,
-
     // debug mode only
     Up,
     Down,
@@ -320,6 +317,10 @@ fn main() {
 
     let mut play_state = MainPlay;
 
+    let mut pause_return_state = play_state;
+
+    let mut frame_step = false;
+
     //----\\ MAIN LOOP //----\\
 
     let mut emergency_exit = 100;
@@ -502,12 +503,6 @@ fn main() {
         match &game_state {
             Practice => todo!(),
             MainPlay => {
-                // pause menu //
-
-                if pause_action {
-                    game_state = PauseScreen;
-                }
-
                 // do rotation //
 
                 let rotate_new_position = if rotation_vector != 0 {
@@ -661,6 +656,60 @@ fn main() {
                             this_score
                         };
 
+                        // disconnect the blocks above and below any cleared lines
+                        for row in full_rows.iter() {
+                            for column in 0..FIELD_WIDTH {
+                                let top_tile = peek_game_layer(
+                                    &mut fc,
+                                    FIELD_X + column,
+                                    (FIELD_Y + row).wrapping_sub(1),
+                                );
+
+                                if col::tile_is_block(top_tile) {
+                                    let (base, west_east, north_south) = piece::combined_tile_to_base_and_connections(top_tile);
+                                    let north_south = match north_south {
+                                        0 => 0,
+                                        1 => 0,
+                                        2 => 3,
+                                        3 => 3,
+                                        _ => unreachable!(),
+                                    };
+
+                                    poke_game_layer(
+                                        &mut fc,
+                                        FIELD_X + column,
+                                        (FIELD_Y + row).wrapping_sub(1),
+                                        TileIndex(base + west_east + north_south * piece::TILE_ROW_LENGTH as u8),
+                                    );
+                                }
+
+                                let bottom_tile = peek_game_layer(
+                                    &mut fc,
+                                    FIELD_X + column,
+                                    (FIELD_Y + row).wrapping_add(1),
+                                );
+
+                                if col::tile_is_block(bottom_tile) {
+                                    let (base, west_east, north_south) = piece::combined_tile_to_base_and_connections(bottom_tile);
+                                    let north_south = match north_south {
+                                        0 => 0,
+                                        1 => 1,
+                                        2 => 1,
+                                        3 => 0,
+                                        _ => unreachable!(),
+                                    };
+
+                                    poke_game_layer(
+                                        &mut fc,
+                                        FIELD_X + column,
+                                        (FIELD_Y + row).wrapping_add(1),
+                                        TileIndex(base + west_east + north_south * piece::TILE_ROW_LENGTH as u8),
+                                    );
+                                }
+
+                            }
+                        }
+
                         game_state = if !full_rows.is_empty() {
                             LineClear
                         } else {
@@ -675,10 +724,24 @@ fn main() {
                 }
 
                 gravity_delay_counter -= 1;
+
+                // pause menu //
+
+                if pause_action || frame_step {
+                    pause_return_state = game_state;
+                    game_state = PauseScreen;
+                    frame_step = false;
+                }
             }
             PauseScreen => {
                 if pause_action {
-                    game_state = play_state;
+                    game_state = pause_return_state;
+                }
+
+                // debug button
+                if debug_force_lock {
+                    game_state = pause_return_state;
+                    frame_step = true;
                 }
             }
             SpawnPiece => {
@@ -702,6 +765,8 @@ fn main() {
                 // get them out of the way so we can see our nice line-clearing animation
                 // (they're locked in anyway so this is more correct in general)
                 //clear_sprites(&mut fc);
+                // why is this commented out?
+                // i guess at this point, the piece already locked in, but we have yet to generate the new piece, that'd make sense
 
                 // animate the rows
                 let animation_frames = 8;
@@ -711,6 +776,7 @@ fn main() {
 
                 for row in full_rows.iter() {
                     for column in 0..FIELD_WIDTH {
+                        // animate
                         poke_game_layer(
                             &mut fc,
                             FIELD_X + column,
@@ -753,6 +819,7 @@ fn main() {
                                 if tile_is_wall(next_tile) {
                                     panic!()
                                 }
+
                                 if tile_is_wall(current_tile) {
                                     panic!()
                                 }
@@ -803,6 +870,14 @@ fn main() {
 
                     game_state = SpawnPiece;
                 }
+
+                // pause menu //
+
+                if pause_action || frame_step {
+                    pause_return_state = game_state;
+                    game_state = PauseScreen;
+                    frame_step = false;
+                }
             }
             GameOver => {
                 if start_button {
@@ -830,8 +905,7 @@ fn main() {
 
                     game_state = play_state;
                 }
-            } //~ Restart => {
-              //~ }
+            }
         }
 
         //----\\ RENDERING //----\\
@@ -971,25 +1045,27 @@ fn main() {
 
                 let offset = 0;
 
-                // draw floating piece
-                let offset = controlled_piece.get_piece().draw_as_sprites(
-                    &mut fc,
-                    controlled_piece.position().0 * 8,
-                    controlled_piece.position().1 * 8,
-                    offset,
-                    0,
-                    None,
-                );
+                if !(game_state == PauseScreen && pause_return_state == LineClear) {
+                    // draw floating piece
+                    let offset = controlled_piece.get_piece().draw_as_sprites(
+                        &mut fc,
+                        controlled_piece.position().0 * 8,
+                        controlled_piece.position().1 * 8,
+                        offset,
+                        None,
+                        None,
+                    );
 
-                // draw piece shadow
-                let offset = controlled_piece.get_piece().draw_as_sprites(
-                    &mut fc,
-                    shadow_pos.0 * 8,
-                    shadow_pos.1 * 8,
-                    offset,
-                    tet::TILE_SHADOW_OFFSET.0,
-                    Some(Subpalette::new(0)),
-                );
+                    // draw piece shadow
+                    let offset = controlled_piece.get_piece().draw_as_sprites(
+                        &mut fc,
+                        shadow_pos.0 * 8,
+                        shadow_pos.1 * 8,
+                        offset,
+                        Some(tet::TILE_SHADOW_OFFSET.0),
+                        Some(Subpalette::new(0)),
+                    );
+                }
 
                 // draw big next piece
                 //~ let offset = bag
@@ -998,8 +1074,6 @@ fn main() {
 
                 // draw swap piece
                 //~ let offset = bag.peek_next().draw_as_sprites(&mut fc, 15 * 8, 1 * 8, offset, 0);
-
-                let _offset = offset;
             }
         }
 

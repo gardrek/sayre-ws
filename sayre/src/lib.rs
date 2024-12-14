@@ -7,6 +7,8 @@ pub mod prng;
 pub mod fp;
 pub mod vector;
 
+pub mod sprite;
+
 pub mod item;
 pub mod mob;
 pub mod mob_drop;
@@ -102,6 +104,7 @@ pub fn main() -> Vfc {
     };
     */
 
+    /*
     let preview_palette_array = [
         //~ Rgb(0x33, 0x77, 0xdd), // background color
         Rgb::new(0x11, 0xbb, 0xdd), // background color
@@ -112,6 +115,18 @@ pub fn main() -> Vfc {
         Rgb::new(0xaa, 0x33, 0x22),
         Rgb::new(0xdd, 0xbb, 0x66),
         Rgb::new(0xff, 0xff, 0xff),
+    ];
+    */
+
+    let preview_palette_array = [
+        Rgb::new(0xbb, 0xcc, 0xdd), // background
+        Rgb::new(0x00, 0x00, 0x00), // black
+        Rgb::new(0x77, 0x44, 0x11), // dark hue
+        Rgb::new(0xaa, 0x66, 0x55), // middle hue
+        Rgb::new(0xdd, 0x99, 0x66), // light hue
+        Rgb::new(0xff, 0x00, 0xff), // reserved
+        Rgb::new(0xbb, 0x66, 0xdd), // accent
+        Rgb::new(0xff, 0xff, 0xff), // white
     ];
 
     fc.palette = Palette::new(
@@ -254,13 +269,32 @@ pub fn main() -> Vfc {
 
     fc.tileset = load_tileset_from_path("test_tiles.png").unwrap();
 
-    for i in 0..=255 {
-        //~ fc.bg_layers[0].tiles[i] = vfc::TileIndex(109);
-        fc.bg_layers[0].tiles[i] = vfc::TileIndex((prng.next().unwrap() & 0xff) as u8);
+    for yi in 0..=31 {
+        for xi in 0..=31 {
+            let i = yi * 32 + xi;
+
+            let short = prng.next().unwrap();
+            let a0 = (short & 0xff) as u8;
+            let b0 = ((short & 0xff00) >> 8) as u8;
+
+            //~ let short = prng.next().unwrap();
+            //~ let a1 = (short & 0xff) as u8;
+            //~ let b1 = ((short & 0xff00) >> 8) as u8;
+
+            //~ fc.bg_layers[0].tiles[i] = vfc::TileIndex(109);
+
+            if a0 < 32 {
+                fc.bg_layers[0].tiles[i] = vfc::TileIndex(0x26);
+            }
+
+            if b0 < 32 {
+                fc.bg_layers[1].tiles[i] = vfc::TileIndex(0x22);
+            }
+        }
     }
 
+    /*
     for i in 0..=((NUM_OAM_ENTRIES - 1) as u8) {
-        //~ let spacing = 10;
         let spacing = 10;
         let columns = 16;
 
@@ -277,6 +311,7 @@ pub fn main() -> Vfc {
 
         fc.oam.0[i as usize] = entry;
     }
+    */
 
     for i in 0..8 {
         /*
@@ -382,7 +417,7 @@ pub fn load_tileset_from_path(path: &str) -> Result<Tileset, Box<dyn std::error:
 
                     let [r, _g, _b, a] = pixel.0;
 
-                    print!("{r} ");
+                    //~ print!("{r:02x} ");
 
                     //~ let color_index = 0;
                     //~ /*
@@ -403,13 +438,13 @@ pub fn load_tileset_from_path(path: &str) -> Result<Tileset, Box<dyn std::error:
                     tileset.pixel_data[plane_index][tile_index][pixel_y] =
                         bytes[pixel_y][plane_index];
                 }
-                println!();
+                //~ println!();
             }
-            println!();
+            //~ println!();
 
             //~ insert_tile();
         }
-        println!();
+        //~ println!();
     }
 
     //~ */
